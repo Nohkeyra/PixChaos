@@ -8,19 +8,16 @@ export default defineConfig(({ mode }) => {
   
   return {
     plugins: [react()],
-    base: './', // Critical for Capacitor and relative paths
+    base: './', // Critical for Capacitor and AppsGeyser
     define: {
-      // This injects the API Key into the build so geminiService.ts can read it
+      // CRITICAL: We must define specific keys. Defining 'process.env' as an object breaks the API_KEY replacement.
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
-      // Polyfill simple process.env checks
-      'process.env': {
-         NODE_ENV: JSON.stringify(mode)
-      }
+      'process.env.NODE_ENV': JSON.stringify(mode),
     },
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
-      sourcemap: mode === 'development',
+      sourcemap: false, // Disable source maps for production
       emptyOutDir: true,
     },
     server: {

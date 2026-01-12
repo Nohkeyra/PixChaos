@@ -1,9 +1,8 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.ico" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
@@ -11,39 +10,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Pixshop - Neural Visual Engine</title>
     
-    <script>
-      window.process = window.process || { env: { NODE_ENV: 'production' } };
-    </script>
-    
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@500;900&family=Koulen&display=swap" rel="stylesheet">
-
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'sans-serif'],
-              display: ['Koulen', 'sans-serif'],
-              mono: ['Orbitron', 'monospace'],
-            },
-            animation: {
-              'fade-in': 'fadeIn 0.3s ease-out forwards',
-              'pulse-glow': 'pulseGlow 2s infinite alternate',
-            },
-            keyframes: {
-              fadeIn: { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
-              pulseGlow: {
-                '0%': { boxShadow: '0 0 5px rgba(248, 19, 13, 0.2)' },
-                '100%': { boxShadow: '0 0 15px rgba(248, 19, 13, 0.5)' }
-              }
-            }
-          }
-        }
-      }
-    </script>
 
     <style>
       :root { color-scheme: dark; }
@@ -68,15 +38,6 @@
         padding-bottom: env(safe-area-inset-bottom);
       }
 
-      /* Cyber grid background */
-      .cyber-grid {
-          background-image: 
-              linear-gradient(rgba(248, 19, 13, 0.05) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(248, 19, 13, 0.05) 1px, transparent 1px);
-          background-size: 40px 40px;
-          pointer-events: none;
-      }
-
       /* Native feeling for PWA */
       * { -webkit-tap-highlight-color: transparent; }
     </style>
@@ -84,14 +45,14 @@
 {
   "imports": {
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "process": "https://esm.sh/process@^0.11.10",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
     "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
     "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "process": "https://esm.sh/process@^0.11.10"
   }
 }
 </script>
