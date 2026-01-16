@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pixshop</string>
+    <string name="title_activity_main">Pixshop</string>
+    <string name="package_name">com.pixshop.app</string>
+    <string name="custom_url_scheme">com.pixshop.app</string>
+</resources>
