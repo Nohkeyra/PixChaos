@@ -91,9 +91,6 @@ export const App: React.FC = () => {
             const url = URL.createObjectURL(currentItem.content);
             setCurrentMediaUrl(url);
             return () => URL.revokeObjectURL(url);
-        } else if (currentItem && typeof currentMediaUrl === 'string') {
-            // Keep using the string URL if it's already a string content
-            setCurrentMediaUrl(currentItem.content as string);
         } else if (currentItem && typeof currentItem.content === 'string') {
              setCurrentMediaUrl(currentItem.content);
         } else {
@@ -130,10 +127,10 @@ export const App: React.FC = () => {
     const handleDownload = useCallback(async () => {
         if (!currentMediaUrl) return;
         setIsLoading(true);
-        setViewerInstruction("INITIATING APK BYPASS SAVE...");
+        setViewerInstruction("DOWNLOADING TO STORAGE...");
 
         try {
-            let baseName = "pixshop_export";
+            let baseName = "pixshop_art";
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             
             if (currentImageFile?.name) {
@@ -151,63 +148,86 @@ export const App: React.FC = () => {
                 blob = await response.blob();
             }
 
-            if (!blob || blob.size === 0) throw new Error("Image buffer null.");
+            if (!blob || blob.size === 0) throw new Error("Null image data.");
 
             const mimeType = blob.type || 'image/png';
             const extension = mimeType.includes('jpeg') ? 'jpg' : (mimeType.includes('webp') ? 'webp' : 'png');
-            const filename = `${baseName}_${timestamp}.${extension}`;
-            const file = new File([blob], filename, { type: mimeType });
+            const filename = `${baseName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${timestamp}.${extension}`;
 
-            // STRATEGY 1: NATIVE SHARE (Best for most APKs)
-            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+            // STRATEGY 1: FILE SYSTEM ACCESS API (Modern Desktop)
+            if ('showSaveFilePicker' in window) {
                 try {
-                    await navigator.share({
-                        files: [file],
-                        title: 'Pixshop Core Save',
-                        text: 'Visual synthesized by Gemini AI'
+                    const handle = await (window as any).showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: 'Neural Image',
+                            accept: { [mimeType]: ['.' + extension] },
+                        }],
                     });
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
                     setIsLoading(false);
-                    setViewerInstruction(null);
-                    return; 
-                } catch (shareErr) {
-                    console.warn("Share intent refused by system shell.", shareErr);
+                    setViewerInstruction("SAVED TO DEVICE");
+                    setTimeout(() => setViewerInstruction(null), 2000);
+                    return;
+                } catch (pickerErr: any) {
+                    if (pickerErr.name === 'AbortError') {
+                        setIsLoading(false);
+                        setViewerInstruction(null);
+                        return;
+                    }
+                    console.warn("Save Picker failed, trying anchor fallback...", pickerErr);
                 }
             }
 
-            // STRATEGY 2: CLEAN BASE64 ANCHOR (Most compatible for WebViews)
+            // STRATEGY 2: ROBUST ANCHOR DOWNLOAD (Compatible with APKs/Mobile)
+            // Converting to Data URL often helps bypass Blob URL restrictions in Android WebViews
             const reader = new FileReader();
             reader.onloadend = () => {
-                const base64data = reader.result as string;
+                const dataUrl = reader.result as string;
                 const link = document.createElement('a');
-                link.href = base64data;
+                link.href = dataUrl;
                 link.download = filename;
-                link.target = '_blank'; // Important for some mobile browsers
+                link.setAttribute('download', filename);
+                link.style.display = 'none';
                 document.body.appendChild(link);
                 link.click();
-                setTimeout(() => document.body.removeChild(link), 1000);
+                
+                // Cleanup
+                setTimeout(() => {
+                    if (document.body.contains(link)) {
+                        document.body.removeChild(link);
+                    }
+                }, 1000);
             };
             reader.readAsDataURL(blob);
 
-            setViewerInstruction("SAVE TRIGGERED. CHECK NOTIFICATIONS.");
+            setViewerInstruction("FILE SENT TO DOWNLOAD MANAGER");
             setTimeout(() => setViewerInstruction(null), 3000);
 
-            // STRATEGY 3: APK FALLBACK (Open image in new tab for manual save)
-            // If the user sees "Permission not granted", this is usually the only way.
+            // FALLBACK FOR APKs: If the above fails due to permission issues in the WebView,
+            // provide a manual save option.
             if (navigator.userAgent.match(/Android/i)) {
                 setTimeout(() => {
-                    const confirmManual = window.confirm("If download didn't start, would you like to open the image in a new tab for manual 'Long-Press' save?");
-                    if (confirmManual) {
+                    if (window.confirm("If download didn't appear in your file manager, would you like to open the image in a full window for manual 'Long-Press' save?")) {
                         const newTab = window.open();
                         if (newTab) {
-                            newTab.document.body.innerHTML = `<img src="${currentMediaUrl}" style="width:100%; height:auto;" /><p style="color:white; background:black; padding:20px; text-align:center; font-family:sans-serif;">Long-press the image above and select 'Download Image' or 'Save Image'.</p>`;
+                            newTab.document.body.style.backgroundColor = 'black';
+                            newTab.document.body.innerHTML = `
+                                <div style="display:flex; flex-direction:column; align-items:center; color:white; font-family:sans-serif; padding:20px;">
+                                    <img src="${currentMediaUrl}" style="width:100%; max-width:600px; height:auto; box-shadow:0 0 20px rgba(0,0,0,0.5);" />
+                                    <p style="margin-top:20px; text-align:center; font-weight:bold;">LONG-PRESS THE IMAGE ABOVE<br>THEN SELECT 'SAVE IMAGE'</p>
+                                </div>
+                            `;
                         }
                     }
                 }, 4000);
             }
 
         } catch (e: any) {
-            console.error("Critical Export Failure:", e);
-            setError(`Permission Lock: ${e.message || 'System blocked file write'}. Suggestion: Screenshot the preview.`);
+            console.error("Download Error:", e);
+            setError(`Save failed: ${e.message || 'Permission Error'}. Try long-pressing the image.`);
         } finally {
             setIsLoading(false);
         }
@@ -471,7 +491,7 @@ export const App: React.FC = () => {
                                         onClick={handleDownload} 
                                         disabled={!currentMediaUrl}
                                         className="p-2 bg-surface-elevated text-gray-500 hover:text-green-400 border border-surface-border hover:border-green-500/50 rounded-sm transition-all"
-                                        title="Export/Share"
+                                        title="Download Image"
                                      >
                                         <DownloadIcon className="w-4 h-4" />
                                      </button>
