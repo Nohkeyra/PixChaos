@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'  # <--- Changed to 21 to fix the error
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
