@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -75,9 +74,10 @@ export const refineImagePrompt = async (prompt: string, isFastAiEnabled?: boolea
     // If Deep Thinking is enabled, we MUST use pro-preview and add thinking config
     const model = useDeepThinking ? 'gemini-3-pro-preview' : (isFastAiEnabled ? 'gemini-3-flash-preview' : 'gemini-3-pro-preview');
     
+    // Config must be any to allow 'thinkingConfig' which is experimental
     const config: any = {};
     if (useDeepThinking) {
-        config.thinkingConfig = { thinkingBudget: 2048 }; // Allocate thinking tokens for logic
+        config.thinkingConfig = { thinkingBudget: 2048 }; 
     }
 
     const response = await ai.models.generateContent({
@@ -97,7 +97,7 @@ export const generateFluxTextToImage = async (prompt: string, config?: ImageGene
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.ARTIST,
             imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any }
-        }
+        } as any // Cast to any to bypass strict type checking for imageConfig
     });
     return handleApiResponse(response);
 };
@@ -112,7 +112,7 @@ export const generateFluxImage = async (source: File | string, prompt: string, c
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.IMAGE_TRANSFORMER, 
             imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any }
-        }
+        } as any
     });
     return handleApiResponse(response);
 };
@@ -127,7 +127,7 @@ export const generateFilteredImage = async (source: File | string, prompt: strin
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.EDITOR, 
             imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any }
-        }
+        } as any
     });
     return handleApiResponse(response);
 };
@@ -143,7 +143,7 @@ export const generateInpaintedImage = async (source: File | string, maskBase64: 
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.IMAGE_TRANSFORMER, 
             imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any } 
-        }
+        } as any
     });
     return handleApiResponse(response);
 };
@@ -174,7 +174,7 @@ export const extractStyleFromImage = async (imageFile: File | string): Promise<R
                 },
                 required: ['target_panel_id', 'preset_data']
             }
-        }
+        } as any
     });
     return JSON.parse(response.text || '{}');
 };
@@ -206,7 +206,7 @@ export const generatePresetMetadata = async (prompt: string): Promise<{ name: st
                 },
                 required: ['name', 'description']
             }
-        }
+        } as any
     });
     return JSON.parse(response.text || '{}');
 };
@@ -229,7 +229,8 @@ export const generateCinematicKeyframe = async (prompt: string, source?: File | 
         config: {
             systemInstruction: "Role: Master Cinematographer. Render photorealistic movie keyframes with dramatic lighting, shallow depth of field, and film grain.",
             imageConfig: { aspectRatio: (config?.aspectRatio || '16:9') as any }
-        }
+        } as any
     });
     return handleApiResponse(response);
 };
+    
