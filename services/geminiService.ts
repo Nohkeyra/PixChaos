@@ -8,7 +8,7 @@ import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 const getAiClient = () => {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-        throw new Error("CRITICAL: Missing API_KEY. Ensure your environment variable is configured.");
+        throw new Error("CRITICAL: Missing API_KEY. Please ensure the environment is configured correctly.");
     }
     return new GoogleGenAI({ apiKey });
 };
@@ -104,7 +104,7 @@ const fileToPart = async (file: File | string): Promise<{ inlineData: { mimeType
             const data = parts[1];
             return { inlineData: { mimeType, data } };
         }
-        throw new Error("Invalid image source. Must be a base64 data URL.");
+        throw new Error("Input source must be a base64 data URL.");
     }
     
     return new Promise((resolve, reject) => {
@@ -120,7 +120,7 @@ const fileToPart = async (file: File | string): Promise<{ inlineData: { mimeType
                 }
             });
         };
-        reader.onerror = (e) => reject(e);
+        reader.onerror = (e) => reject(new Error("Failed to process image file."));
     });
 };
 
@@ -128,15 +128,20 @@ const handleApiResponse = (response: GenerateContentResponse): string => {
     const candidate = response.candidates?.[0];
     
     if (!candidate) {
-        throw new Error("API Error: Model failed to return any candidates. This often happens due to content safety blocks.");
+        console.error("Empty API candidates list. Full response:", response);
+        throw new Error("Neural core failed to generate a result. This usually happens due to high server load or content safety filters.");
     }
 
     if (candidate.finishReason === 'SAFETY') {
-        throw new Error("API Error: Request blocked by safety filters. Try a different prompt.");
+        throw new Error("Action blocked by safety protocols. Please adjust your prompt and try again.");
     }
 
     if (candidate.finishReason === 'RECITATION') {
-        throw new Error("API Error: Output blocked due to copyright/recitation filters.");
+        throw new Error("The engine detected potential copyright conflicts. Try varying your description.");
+    }
+
+    if (candidate.finishReason === 'OTHER') {
+        throw new Error("Process interrupted by an internal system error.");
     }
 
     for (const part of candidate.content.parts) {
@@ -147,10 +152,10 @@ const handleApiResponse = (response: GenerateContentResponse): string => {
 
     const responseText = response.text;
     if (responseText) {
-        throw new Error(`API Error: AI returned text instead of an image. Message: "${responseText.substring(0, 100)}..."`);
+        throw new Error(`The model returned text instead of an image: "${responseText.substring(0, 100)}..."`);
     }
     
-    throw new Error("API Error: No valid image data found in response.");
+    throw new Error("Neural output stream contained no valid visual data.");
 };
 
 export const refineImagePrompt = async (prompt: string, useFastModel: boolean = false): Promise<string> => {
@@ -188,7 +193,7 @@ export const generatePresetMetadata = async (prompt: string, useFastModel: boole
         const json = JSON.parse(response.text || '{}');
         return json as {name: string, description: string, recommended_panel: string};
     } catch (e) {
-        return { name: "Custom Preset", description: "User generated style.", recommended_panel: 'flux' };
+        return { name: "Custom Style", description: "User defined aesthetic signature.", recommended_panel: 'flux' };
     }
 };
 
@@ -260,7 +265,7 @@ export const generateInpaintedImage = async (source: File | string, maskBase64: 
     const imagePart = await fileToPart(source);
     
     if (!maskBase64 || !maskBase64.includes(',')) {
-        throw new Error("Invalid mask data provided to generator.");
+        throw new Error("Critical: Mask data is corrupt or missing.");
     }
 
     const maskPart = {
@@ -300,7 +305,7 @@ export const generateRealtimePreview = async (prompt: string, useFastModel: bool
         });
         return handleApiResponse(response);
     } catch (e) {
-        console.error("Preview generation failed:", e);
+        console.warn("Rapid preview generation suppressed:", e);
         return null;
     }
 };
@@ -320,7 +325,7 @@ export const extractStyleFromImage = async (imageFile: File | string, useFastMod
     const model = useFastModel ? 'gemini-3-flash-preview' : 'gemini-3-pro-preview';
     const response = await ai.models.generateContent({
         model: model,
-        contents: { parts: [{ text: "Analyze the input image and perform style routing. Output the JSON configuration strictly following the schema." }, imagePart] },
+        contents: { parts: [{ text: "Analyze stylistic patterns and perform DNA routing. Return strictly structured JSON." }, imagePart] },
         config: {
             systemInstruction: PROTOCOLS.STYLE_ROUTER,
             responseMimeType: "application/json",
@@ -347,7 +352,7 @@ export const extractStyleFromImage = async (imageFile: File | string, useFastMod
         const json = JSON.parse(response.text || '{}');
         return json as RoutedStyle;
     } catch (e) {
-        throw new Error("Failed to parse visual DNA routing packet.");
+        throw new Error("Visual DNA extraction sequence failed to parse.");
     }
 };
 
@@ -357,7 +362,7 @@ export const describeImageForPrompt = async (imageFile: File | string, useFastMo
     const model = useFastModel ? 'gemini-3-flash-preview' : 'gemini-3-pro-preview';
     const response = await ai.models.generateContent({
         model: model,
-        contents: { parts: [{ text: "Describe this image in detail as if providing a prompt for a high-end AI image generator. Focus on the main subject, composition, and key visual elements. Output ONLY the description." }, imagePart] },
+        contents: { parts: [{ text: "Perform high-fidelity visual description for prompt synthesis. Focus on subject, texture, and light." }, imagePart] },
     });
     return response.text || "";
 };

@@ -83,23 +83,17 @@ export const App: React.FC = () => {
         return currentItem?.content instanceof File ? currentItem.content : null;
     }, [currentItem]);
     
-    const currentMediaUrl = useMemo(() => {
-        if (!currentItem) return null;
-        if (typeof currentItem.content === 'string') return currentMediaUrlInternal;
-        return URL.createObjectURL(currentItem.content);
-    }, [currentItem]);
-
     // Track Revocable URL separately to avoid memory leaks
-    const [currentMediaUrlInternal, setCurrentMediaUrlInternal] = useState<string | null>(null);
+    const [currentMediaUrl, setCurrentMediaUrl] = useState<string | null>(null);
     useEffect(() => {
         if (currentItem && typeof currentItem.content !== 'string') {
             const url = URL.createObjectURL(currentItem.content);
-            setCurrentMediaUrlInternal(url);
+            setCurrentMediaUrl(url);
             return () => URL.revokeObjectURL(url);
         } else if (currentItem && typeof currentItem.content === 'string') {
-            setCurrentMediaUrlInternal(currentItem.content);
+            setCurrentMediaUrl(currentItem.content);
         } else {
-            setCurrentMediaUrlInternal(null);
+            setCurrentMediaUrl(null);
         }
     }, [currentItem]);
 
@@ -155,34 +149,62 @@ export const App: React.FC = () => {
                 blob = await response.blob();
             }
 
-            if (!blob || blob.size === 0) throw new Error("Generated image buffer is empty.");
+            if (!blob || blob.size === 0) throw new Error("Image data is corrupted.");
 
             const mimeType = blob.type;
             let extension = 'png';
             if (mimeType.includes('jpeg') || mimeType.includes('jpg')) extension = 'jpg';
             else if (mimeType.includes('webp')) extension = 'webp';
-            else if (mimeType.includes('gif')) extension = 'gif';
-            else if (mimeType.includes('svg')) extension = 'svg';
 
             const filename = `${baseName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${extension}`;
+
+            // 1. Try File System Access API (Best for "Access File Manager" request)
+            // Supported on modern Desktop browsers
+            if ('showSaveFilePicker' in window) {
+                try {
+                    const handle = await (window as any).showSaveFilePicker({
+                        suggestedName: filename,
+                        types: [{
+                            description: 'Neural Image Output',
+                            accept: { [mimeType]: ['.' + extension] },
+                        }],
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    setViewerInstruction("IMAGE SAVED TO DEVICE STORAGE");
+                    setTimeout(() => setViewerInstruction(null), 2000);
+                    setIsLoading(false);
+                    return;
+                } catch (pickerErr: any) {
+                    // AbortError means user cancelled, we should just stop
+                    if (pickerErr.name === 'AbortError') {
+                        setIsLoading(false);
+                        setViewerInstruction(null);
+                        return;
+                    }
+                    console.warn("SaveFilePicker failed, trying sharing...", pickerErr);
+                }
+            }
+
             const file = new File([blob], filename, { type: mimeType });
 
-            // 1. Try Native Share (Mobile)
+            // 2. Try Native Share (Best for Mobile Gallery/File access)
             let shareSuccess = false;
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
                     await navigator.share({
                         files: [file],
                         title: 'Pixshop Export',
-                        text: 'Created with Pixshop AI'
+                        text: 'Generated with AI'
                     });
                     shareSuccess = true;
                 } catch (shareError) {
-                    console.warn("Share failed or cancelled:", shareError);
+                    console.warn("Native share cancelled or failed:", shareError);
                 }
             }
 
-            // 2. Fallback to Anchor Download
+            // 3. Fallback to Anchor Download (Standard desktop/mobile file system save)
             if (!shareSuccess) {
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
@@ -199,8 +221,8 @@ export const App: React.FC = () => {
             }
 
         } catch (e: any) {
-            console.error("Download mechanism failed:", e);
-            setError(`Export failed: ${e.message || String(e)}. Try long-pressing the image to save.`);
+            console.error("Export failure:", e);
+            setError(`Export error: ${e.message || String(e)}. Try long-pressing the image to save manually.`);
             if (currentMediaUrl) {
                  window.open(currentMediaUrl, '_blank');
             }
@@ -246,7 +268,7 @@ export const App: React.FC = () => {
     }, []);
 
     const handleHardFix = useCallback(async () => {
-        if(window.confirm("This will factory reset the app and delete all history. Continue?")) {
+        if(window.confirm("Perform hard factory reset? All local visual history will be purged.")) {
             await nukeDatabase();
             window.location.reload();
         }
@@ -263,7 +285,7 @@ export const App: React.FC = () => {
                     }
                 }
             } catch (err) {
-                console.warn("API Key check warning:", err);
+                console.warn("API Key bridge warning:", err);
             }
         }
 
@@ -290,8 +312,8 @@ export const App: React.FC = () => {
                         if (req.maskBase64 && req.maskBase64.length > 0) {
                              result = await geminiService.generateInpaintedImage(source, req.maskBase64, req.prompt!, { systemInstructionOverride: req.systemInstructionOverride, negativePrompt: req.negativePrompt, denoisingInstruction: req.denoisingInstruction }, isFastAiEnabled);
                         } else {
-                             console.warn("Inpaint requested without mask. Falling back to full image edit.");
-                             const fallbackPrompt = `${req.prompt} (Apply this change to the entire image context)`;
+                             console.warn("Auto-Inpaint mode active.");
+                             const fallbackPrompt = `${req.prompt} (Process the entire image context)`;
                              result = await geminiService.generateFilteredImage(source, fallbackPrompt, { aspectRatio: req.aspectRatio, systemInstructionOverride: PROTOCOLS.IMAGE_TRANSFORMER, negativePrompt: req.negativePrompt }, isFastAiEnabled);
                         }
                     }
@@ -326,18 +348,31 @@ export const App: React.FC = () => {
             }
 
         } catch (e: any) {
-            console.error("Generation failed Error Object:", e);
+            console.error("Neural Execution Failure:", e);
             let msg = "Generation failed. Please try again.";
-            if (typeof e === 'string') msg = e;
-            else if (e?.message) msg = e.message;
-            else if (typeof e === 'object' && e !== null) {
+            
+            // Extreme stringification to avoid [object Object]
+            if (typeof e === 'string') {
+                msg = e;
+            } else if (e instanceof Error) {
+                msg = e.message;
+            } else if (typeof e === 'object' && e !== null) {
                 try {
-                    // Try to find a nested error message which sometimes happens in AI SDKs
-                    msg = e.error?.message || e.statusText || JSON.stringify(e);
-                } catch(stringifyErr) {
-                    msg = "An unexpected error occurred in the neural engine.";
+                    const stringified = JSON.stringify(e);
+                    if (stringified !== '{}') {
+                        msg = e.error?.message || e.message || stringified;
+                    } else {
+                        msg = String(e);
+                    }
+                } catch {
+                    msg = "An opaque error occurred in the neural engine.";
                 }
             }
+            
+            if (msg.includes("[object Object]")) {
+                msg = "The API returned an unexpected object format. This often relates to transient network issues.";
+            }
+            
             setError(msg);
         } finally {
             setIsLoading(false);
@@ -376,14 +411,17 @@ export const App: React.FC = () => {
                             {isLoading && (
                                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
                                     <Spinner />
-                                    {viewerInstruction && <div className="absolute bottom-10 text-white font-mono text-xs animate-pulse">{viewerInstruction}</div>}
+                                    {viewerInstruction && <div className="absolute bottom-10 text-white font-mono text-xs animate-pulse tracking-widest">{viewerInstruction}</div>}
                                 </div>
                             )}
                             
                             {error && (
-                                <div className="absolute top-4 left-4 right-4 z-40 bg-red-900/80 border border-red-500 text-white p-3 rounded shadow-lg flex justify-between items-center animate-fade-in backdrop-blur-md">
-                                    <span className="text-xs font-mono">{error}</span>
-                                    <button onClick={() => setError(null)}><XIcon className="w-4 h-4" /></button>
+                                <div className="absolute top-4 left-4 right-4 z-40 bg-red-900/90 border border-red-500 text-white p-3 rounded shadow-2xl flex justify-between items-start animate-fade-in backdrop-blur-xl">
+                                    <div className="flex-1 mr-4">
+                                        <p className="text-[10px] font-black uppercase mb-1 text-red-300">System Error</p>
+                                        <p className="text-xs font-mono leading-relaxed">{error}</p>
+                                    </div>
+                                    <button onClick={() => setError(null)} className="mt-1 p-1 hover:bg-white/10 rounded"><XIcon className="w-4 h-4" /></button>
                                 </div>
                             )}
 
@@ -392,8 +430,7 @@ export const App: React.FC = () => {
                                     <CompareSlider originalImage={originalImageUrl} modifiedImage={currentMediaUrl} />
                                 ) : (
                                     currentMediaUrl ? (
-                                        <ZoomPanViewer src={currentMediaUrl} className={activeTab === 'inpaint' ? 'cursor-crosshair' : ''}>
-                                        </ZoomPanViewer>
+                                        <ZoomPanViewer src={currentMediaUrl} className={activeTab === 'inpaint' ? 'cursor-crosshair' : ''} />
                                     ) : (
                                         <ImageUploadPlaceholder onImageUpload={handleImageUpload} />
                                     )
@@ -403,7 +440,7 @@ export const App: React.FC = () => {
                             <div className="bg-surface-panel border-t border-surface-border p-2 flex justify-between items-center shrink-0 z-20">
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() => { if(window.confirm("Clear session and current image?")) handleClearSession(); }}
+                                        onClick={() => { if(window.confirm("Reset session and clear work surface?")) handleClearSession(); }}
                                         className="p-2 text-gray-400 hover:text-red-500 bg-surface-elevated rounded-sm border border-surface-border hover:border-red-500/50 transition-all"
                                         title="Clear All"
                                     >
@@ -412,7 +449,7 @@ export const App: React.FC = () => {
                                     
                                     <button
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="px-3 py-1 bg-blue-600/20 border border-blue-500/50 rounded flex items-center gap-2 group hover:bg-blue-600 hover:text-white transition-all"
+                                        className="px-3 py-1 bg-blue-600/20 border border-blue-500/50 rounded flex items-center gap-2 group hover:bg-blue-600 hover:text-white transition-all shadow-sm"
                                         title="New Upload"
                                     >
                                         <PlusIcon className="w-4 h-4 text-blue-400 group-hover:text-white" />
@@ -427,7 +464,7 @@ export const App: React.FC = () => {
                                     <button 
                                         onClick={() => setShowHistoryGrid(true)} 
                                         className="p-2 text-gray-400 hover:text-white bg-surface-elevated rounded-sm border border-surface-border hover:border-surface-border-light transition-all"
-                                        title="History"
+                                        title="Archive Ledger"
                                     >
                                         <HistoryIcon className="w-4 h-4" />
                                     </button>
@@ -457,7 +494,7 @@ export const App: React.FC = () => {
                                          <button 
                                             onClick={() => setIsComparing(!isComparing)} 
                                             className={`p-2 rounded-sm border transition-all ${isComparing ? 'bg-red-900/30 text-red-500 border-red-500' : 'bg-surface-elevated text-gray-400 border-surface-border hover:text-white'}`}
-                                            title="Compare Original"
+                                            title="Compare with Seed"
                                          >
                                              <CompareIcon className="w-4 h-4" />
                                          </button>
@@ -466,7 +503,7 @@ export const App: React.FC = () => {
                                         onClick={handleDownload} 
                                         disabled={!currentMediaUrl}
                                         className="p-2 bg-surface-elevated text-gray-400 hover:text-green-400 border border-surface-border hover:border-green-500/50 rounded-sm transition-all"
-                                        title="Save/Share"
+                                        title="Export to Device"
                                      >
                                         <DownloadIcon className="w-4 h-4" />
                                      </button>
