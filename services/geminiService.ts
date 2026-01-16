@@ -104,8 +104,7 @@ const fileToPart = async (file: File | string): Promise<{ inlineData: { mimeType
             const data = parts[1];
             return { inlineData: { mimeType, data } };
         }
-        // Fallback or error for non-data URLs if needed
-        throw new Error("Invalid image source provided. String must be a base64 data URL.");
+        throw new Error("Invalid image source. Must be a base64 data URL.");
     }
     
     return new Promise((resolve, reject) => {
@@ -127,7 +126,18 @@ const fileToPart = async (file: File | string): Promise<{ inlineData: { mimeType
 
 const handleApiResponse = (response: GenerateContentResponse): string => {
     const candidate = response.candidates?.[0];
-    if (!candidate) throw new Error("API Response Error: No candidates returned from the AI model.");
+    
+    if (!candidate) {
+        throw new Error("API Error: Model failed to return any candidates. This often happens due to content safety blocks.");
+    }
+
+    if (candidate.finishReason === 'SAFETY') {
+        throw new Error("API Error: Request blocked by safety filters. Try a different prompt.");
+    }
+
+    if (candidate.finishReason === 'RECITATION') {
+        throw new Error("API Error: Output blocked due to copyright/recitation filters.");
+    }
 
     for (const part of candidate.content.parts) {
         if (part.inlineData) {
@@ -135,11 +145,12 @@ const handleApiResponse = (response: GenerateContentResponse): string => {
         }
     }
 
-    if (response.text) {
-        throw new Error(`API Response Error: AI returned text instead of an image. Message: "${response.text}"`);
+    const responseText = response.text;
+    if (responseText) {
+        throw new Error(`API Error: AI returned text instead of an image. Message: "${responseText.substring(0, 100)}..."`);
     }
     
-    throw new Error("API Response Error: No valid image data found.");
+    throw new Error("API Error: No valid image data found in response.");
 };
 
 export const refineImagePrompt = async (prompt: string, useFastModel: boolean = false): Promise<string> => {
@@ -195,7 +206,7 @@ export const generateFluxTextToImage = async (prompt: string, config?: ImageGene
         contents: { parts: [{ text: finalPrompt }] },
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.ARTIST,
-            imageConfig: { aspectRatio: config?.aspectRatio || '1:1' }
+            imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any }
         }
     });
     return handleApiResponse(response);
@@ -216,7 +227,7 @@ export const generateFluxImage = async (source: File | string, prompt: string, c
         contents: { parts: [{ text: finalPrompt }, imagePart] },
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.IMAGE_TRANSFORMER, 
-            imageConfig: { aspectRatio: config?.aspectRatio || '1:1' }
+            imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any }
         }
     });
     return handleApiResponse(response);
@@ -237,7 +248,7 @@ export const generateFilteredImage = async (source: File | string, prompt: strin
         contents: { parts: [{ text: finalPrompt }, imagePart] },
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.IMAGE_TRANSFORMER, 
-            imageConfig: { aspectRatio: config?.aspectRatio || '1:1' }
+            imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any }
         }
     });
     return handleApiResponse(response);
@@ -248,7 +259,6 @@ export const generateInpaintedImage = async (source: File | string, maskBase64: 
     const model = useFastModel ? 'gemini-2.5-flash-image' : 'gemini-3-pro-image-preview'; 
     const imagePart = await fileToPart(source);
     
-    // Ensure mask is valid base64
     if (!maskBase64 || !maskBase64.includes(',')) {
         throw new Error("Invalid mask data provided to generator.");
     }
@@ -270,7 +280,7 @@ export const generateInpaintedImage = async (source: File | string, maskBase64: 
         contents: { parts: [{ text: finalPrompt }, imagePart, maskPart] },
         config: {
             systemInstruction: config?.systemInstructionOverride || PROTOCOLS.IMAGE_TRANSFORMER, 
-            imageConfig: { aspectRatio: config?.aspectRatio || '1:1' } 
+            imageConfig: { aspectRatio: (config?.aspectRatio || '1:1') as any } 
         }
     });
     return handleApiResponse(response);
@@ -285,7 +295,7 @@ export const generateRealtimePreview = async (prompt: string, useFastModel: bool
             contents: { parts: [{ text: prompt }] },
             config: {
                 systemInstruction: PROTOCOLS.PREVIEW,
-                imageConfig: { aspectRatio: '1:1' }
+                imageConfig: { aspectRatio: '1:1' as any }
             }
         });
         return handleApiResponse(response);

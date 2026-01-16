@@ -12,7 +12,15 @@ export const dataUrlToBlob = (dataUrl: string): Blob => {
   try {
     const parts = dataUrl.split(',');
     if (parts.length < 2) {
-      console.warn("Invalid Data URL format, defaulting to image/png for blob conversion.");
+      console.warn("Invalid Data URL format, checking for raw base64 or defaulting.");
+      if (dataUrl.length > 100) {
+           // Might be a raw base64 string
+           const bstr = atob(dataUrl);
+           let n = bstr.length;
+           const u8arr = new Uint8Array(n);
+           while (n--) u8arr[n] = bstr.charCodeAt(n);
+           return new Blob([u8arr], { type: 'image/png' });
+      }
       return new Blob([], { type: 'image/png' });
     }
 
@@ -26,7 +34,7 @@ export const dataUrlToBlob = (dataUrl: string): Blob => {
     }
     return new Blob([u8arr], { type: mime });
   } catch (e) {
-    console.error("Failed to convert data URL to blob, using fallback empty blob:", e);
+    console.error("Failed to convert data URL to blob:", e);
     return new Blob([], { type: 'image/png' }); // Return empty blob on error
   }
 };
@@ -35,7 +43,7 @@ const base64ToFile = (dataurl: string, filename: string, mimeType: string, lastM
     // Ensure mimeType is an image type, fallback if not.
     const effectiveMimeType = mimeType.startsWith('image/') ? mimeType : 'image/png';
 
-    if (!dataurl || !dataurl.includes(',')) {
+    if (!dataurl || (!dataurl.includes(',') && dataurl.length < 100)) {
         // Fallback for invalid data URL
         return new File([""], filename, {type: effectiveMimeType, lastModified: lastModified});
     }

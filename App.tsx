@@ -85,8 +85,22 @@ export const App: React.FC = () => {
     
     const currentMediaUrl = useMemo(() => {
         if (!currentItem) return null;
-        if (typeof currentItem.content === 'string') return currentItem.content;
+        if (typeof currentItem.content === 'string') return currentMediaUrlInternal;
         return URL.createObjectURL(currentItem.content);
+    }, [currentItem]);
+
+    // Track Revocable URL separately to avoid memory leaks
+    const [currentMediaUrlInternal, setCurrentMediaUrlInternal] = useState<string | null>(null);
+    useEffect(() => {
+        if (currentItem && typeof currentItem.content !== 'string') {
+            const url = URL.createObjectURL(currentItem.content);
+            setCurrentMediaUrlInternal(url);
+            return () => URL.revokeObjectURL(url);
+        } else if (currentItem && typeof currentItem.content === 'string') {
+            setCurrentMediaUrlInternal(currentItem.content);
+        } else {
+            setCurrentMediaUrlInternal(null);
+        }
     }, [currentItem]);
 
     const originalImageUrl = useMemo(() => {
@@ -109,7 +123,7 @@ export const App: React.FC = () => {
             setHistoryIndex(prev => prev + 1);
             setAppStarted(true);
         } catch (e: any) {
-            setError(`Upload error: ${e.message}`);
+            setError(`Upload error: ${e.message || String(e)}`);
         } finally {
             setIsLoading(false);
         }
@@ -118,6 +132,7 @@ export const App: React.FC = () => {
     const handleDownload = useCallback(async () => {
         if (!currentMediaUrl) return;
         setIsLoading(true);
+        setViewerInstruction("PREPARING IMAGE FOR EXPORT...");
 
         try {
             let baseName = "pixshop-creation";
@@ -140,6 +155,8 @@ export const App: React.FC = () => {
                 blob = await response.blob();
             }
 
+            if (!blob || blob.size === 0) throw new Error("Generated image buffer is empty.");
+
             const mimeType = blob.type;
             let extension = 'png';
             if (mimeType.includes('jpeg') || mimeType.includes('jpg')) extension = 'jpg';
@@ -147,9 +164,10 @@ export const App: React.FC = () => {
             else if (mimeType.includes('gif')) extension = 'gif';
             else if (mimeType.includes('svg')) extension = 'svg';
 
-            const filename = `${baseName}.${extension}`;
+            const filename = `${baseName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${extension}`;
             const file = new File([blob], filename, { type: mimeType });
 
+            // 1. Try Native Share (Mobile)
             let shareSuccess = false;
             if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
                 try {
@@ -164,26 +182,31 @@ export const App: React.FC = () => {
                 }
             }
 
+            // 2. Fallback to Anchor Download
             if (!shareSuccess) {
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = filename;
+                link.target = "_blank"; 
                 document.body.appendChild(link);
                 link.click();
-                document.body.removeChild(link);
                 
-                setTimeout(() => URL.revokeObjectURL(url), 2000);
+                setTimeout(() => {
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }, 2000);
             }
 
         } catch (e: any) {
             console.error("Download mechanism failed:", e);
-            setError("Could not save image.");
+            setError(`Export failed: ${e.message || String(e)}. Try long-pressing the image to save.`);
             if (currentMediaUrl) {
                  window.open(currentMediaUrl, '_blank');
             }
         } finally {
             setIsLoading(false);
+            setViewerInstruction(null);
         }
     }, [currentMediaUrl, currentImageFile, setIsLoading]);
 
@@ -303,8 +326,19 @@ export const App: React.FC = () => {
             }
 
         } catch (e: any) {
-            console.error("Generation failed:", e);
-            setError(e.message || "Generation failed. Please try again.");
+            console.error("Generation failed Error Object:", e);
+            let msg = "Generation failed. Please try again.";
+            if (typeof e === 'string') msg = e;
+            else if (e?.message) msg = e.message;
+            else if (typeof e === 'object' && e !== null) {
+                try {
+                    // Try to find a nested error message which sometimes happens in AI SDKs
+                    msg = e.error?.message || e.statusText || JSON.stringify(e);
+                } catch(stringifyErr) {
+                    msg = "An unexpected error occurred in the neural engine.";
+                }
+            }
+            setError(msg);
         } finally {
             setIsLoading(false);
         }
@@ -338,7 +372,6 @@ export const App: React.FC = () => {
                     <Header onGoHome={handleClearSession} isPlatinumTier={true} />
                     
                     <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-                        {/* VIEWER AREA */}
                         <div className="flex-1 relative bg-surface-deep overflow-hidden flex flex-col">
                             {isLoading && (
                                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -347,7 +380,6 @@ export const App: React.FC = () => {
                                 </div>
                             )}
                             
-                            {/* Error Toast */}
                             {error && (
                                 <div className="absolute top-4 left-4 right-4 z-40 bg-red-900/80 border border-red-500 text-white p-3 rounded shadow-lg flex justify-between items-center animate-fade-in backdrop-blur-md">
                                     <span className="text-xs font-mono">{error}</span>
@@ -355,14 +387,12 @@ export const App: React.FC = () => {
                                 </div>
                             )}
 
-                            {/* Main View */}
                             <div className="flex-1 relative overflow-hidden">
                                 {isComparing && originalImageUrl && currentMediaUrl ? (
                                     <CompareSlider originalImage={originalImageUrl} modifiedImage={currentMediaUrl} />
                                 ) : (
                                     currentMediaUrl ? (
                                         <ZoomPanViewer src={currentMediaUrl} className={activeTab === 'inpaint' ? 'cursor-crosshair' : ''}>
-                                            {/* Inpaint Mask Overlay */}
                                         </ZoomPanViewer>
                                     ) : (
                                         <ImageUploadPlaceholder onImageUpload={handleImageUpload} />
@@ -370,10 +400,8 @@ export const App: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Viewer Controls Toolbar */}
                             <div className="bg-surface-panel border-t border-surface-border p-2 flex justify-between items-center shrink-0 z-20">
                                 <div className="flex gap-2">
-                                    {/* Clear/Trash Button */}
                                     <button
                                         onClick={() => { if(window.confirm("Clear session and current image?")) handleClearSession(); }}
                                         className="p-2 text-gray-400 hover:text-red-500 bg-surface-elevated rounded-sm border border-surface-border hover:border-red-500/50 transition-all"
@@ -382,7 +410,6 @@ export const App: React.FC = () => {
                                         <TrashIcon className="w-4 h-4" />
                                     </button>
                                     
-                                    {/* Prominent Upload Button */}
                                     <button
                                         onClick={() => fileInputRef.current?.click()}
                                         className="px-3 py-1 bg-blue-600/20 border border-blue-500/50 rounded flex items-center gap-2 group hover:bg-blue-600 hover:text-white transition-all"
@@ -447,9 +474,7 @@ export const App: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* SIDEBAR */}
                         <div className="w-full md:w-[400px] bg-surface-panel border-l border-surface-border flex flex-col z-20 shrink-0 h-[45vh] md:h-auto shadow-2xl">
-                            {/* Tab Bar with Labels for discovery */}
                             <div className="flex overflow-x-auto no-scrollbar border-b border-surface-border bg-black/20">
                                 {[
                                     { id: 'flux', icon: BoltIcon, color: 'text-red-500', label: 'FLUX' },
@@ -471,7 +496,6 @@ export const App: React.FC = () => {
                                 ))}
                             </div>
                             
-                            {/* Active Panel Content */}
                             <div className="flex-1 overflow-hidden relative">
                                 {activeTab === 'flux' && (
                                     <FluxPanel 
@@ -549,7 +573,6 @@ export const App: React.FC = () => {
                 </>
             )}
 
-            {/* Widgets - Globally Positioned Over everything, Rendered Last for top-most stacking */}
             <SystemConfigWidget 
                 onSoftFix={handleSoftFix} 
                 onHardFix={handleHardFix} 

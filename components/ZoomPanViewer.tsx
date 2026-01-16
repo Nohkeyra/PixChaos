@@ -126,18 +126,17 @@ export const ZoomPanViewer: React.FC<ZoomPanViewerProps> = ({ src, className, ch
                     <img 
                         src={src} 
                         alt="Neural Preview" 
-                        className="max-w-full max-h-full object-contain pointer-events-none shadow-[0_0_50px_rgba(0,0,0,0.5)]"
-                        draggable={false}
+                        className="max-w-full max-h-full object-contain shadow-[0_0_50px_rgba(0,0,0,0.5)] pointer-events-auto"
+                        draggable={true}
                         style={{
                             imageRendering: 'auto',
-                            // Ensure the image fits the container exactly without clipping
                             display: 'block'
                         }}
                     />
                     
                     {/* Synchronized Children (e.g. Inpaint mask overlay) */}
                     {children && (
-                        <div className="absolute inset-0 w-full h-full">
+                        <div className="absolute inset-0 w-full h-full pointer-events-none">
                             {children}
                         </div>
                     )}
