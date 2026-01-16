@@ -1,13 +1,12 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
-*/
+ */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { GenerationRequest } from '../App';
-import { SunIcon, SlidersIcon, SaveIcon, TrashIcon, CopyIcon } from './icons';
-import { refineImagePrompt, PROTOCOLS } from '../services/geminiService'; 
+import { SunIcon, SlidersIcon, SaveIcon, TrashIcon } from './icons';
+import { PROTOCOLS } from '../services/geminiService'; 
 import { loadUserPresets, addUserPreset, deleteUserPreset } from '../services/persistence';
 import { PresetSaveModal } from './PresetSaveModal';
 
@@ -15,7 +14,16 @@ interface AdjustmentPanelProps {
   onRequest: (request: GenerationRequest) => void;
   isLoading: boolean;
   setViewerInstruction: (text: string | null) => void;
-  isFastAiEnabled: boolean; 
+  isFastAiEnabled?: boolean; // Made optional to prevent build errors in App.tsx
+}
+
+// Define the shape of a Preset to fix TypeScript errors
+interface Preset {
+  name: string;
+  description: string;
+  prompt: string;
+  isCustom: boolean;
+  id: string;
 }
 
 const PRESETS = [
@@ -33,7 +41,7 @@ const PRESETS = [
     { name: 'Crisp', description: 'Sharpness.', prompt: 'Enhance edge sharpness, micro-contrast boost, de-haze, clear clarity.' }
 ];
 
-export const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onRequest, isLoading, isFastAiEnabled }) => {
+export const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onRequest, isLoading }) => {
   const [userPrompt, setUserPrompt] = useState('');
   const [selectedPresetName, setSelectedPresetName] = useState<string>('');
   const [customPresets, setCustomPresets] = useState<any[]>([]);
@@ -53,7 +61,7 @@ export const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onRequest, isL
     return () => window.removeEventListener('stylePresetsUpdated', loadPresets);
   }, [loadPresets]);
 
-  const allPresets = useMemo(() => {
+  const allPresets: Preset[] = useMemo(() => {
       const formattedCustom = customPresets.map(p => ({
           name: p.name,
           description: p.description,
@@ -61,7 +69,14 @@ export const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onRequest, isL
           isCustom: true,
           id: p.id
       }));
-      return [...formattedCustom, ...PRESETS];
+      
+      const formattedStandard = PRESETS.map(p => ({
+          ...p,
+          isCustom: false,
+          id: `std_${p.name}` // Assign specific ID to avoid type errors
+      }));
+
+      return [...formattedCustom, ...formattedStandard];
   }, [customPresets]);
 
   const selectedPreset = useMemo(() => allPresets.find(p => p.name === selectedPresetName), [selectedPresetName, allPresets]);
@@ -183,7 +198,7 @@ export const AdjustmentPanel: React.FC<AdjustmentPanelProps> = ({ onRequest, isL
             <div className="grid grid-cols-2 gap-2 pb-4">
                 {allPresets.map(preset => (
                     <button
-                        key={preset.name}
+                        key={preset.id} // Changed from name to id to be safer
                         onClick={() => setSelectedPresetName(preset.name === selectedPresetName ? '' : preset.name)}
                         className={`preset-card min-h-[4rem] flex flex-col justify-between ${
                             selectedPresetName === preset.name 
