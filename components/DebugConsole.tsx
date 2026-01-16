@@ -106,10 +106,10 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ onClose }) => {
              ))
          )}
       </div>
-      
+
       {/* Footer input (future expansion for commands) */}
       <div className="p-2 border-t border-green-900/30 bg-black text-green-700 text-[10px] pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-         > _ SYSTEM MONITOR ACTIVE
+         &gt; _ SYSTEM MONITOR ACTIVE
       </div>
     </div>
   );
