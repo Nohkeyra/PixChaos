@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -27,7 +26,7 @@ interface VectorArtPanelProps {
   currentImageFile?: File | null;
   setViewerInstruction: (text: string | null) => void;
   initialPrompt?: string;
-  isFastAiEnabled: boolean;
+  isFastAiEnabled?: boolean; // Changed to optional (?) to fix the build error
 }
 
 const basePresetGroups: Record<string, VectorPreset[]> = {
@@ -245,3 +244,4 @@ export const VectorArtPanel: React.FC<VectorArtPanelProps> = ({ onRequest, isLoa
     </div>
   );
 };
+            
