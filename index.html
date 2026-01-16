@@ -1,56 +1,138 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="./vite.svg" />
     <link rel="manifest" href="./manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#000000" />
     <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Pixshop">
     <title>Pixshop - Neural Visual Engine</title>
     
-    <!-- Fonts -->
+    <script>
+      window.process = window.process || { env: { NODE_ENV: 'production' } };
+    </script>
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Base Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Orbitron:wght@500;900&family=Koulen&display=swap" rel="stylesheet">
+    
+    <!-- Graffiti Font: Rubik Wet Paint for the sloppy tag look -->
+    <link href="https://fonts.googleapis.com/css2?family=Rubik+Wet+Paint&display=swap" rel="stylesheet">
 
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      :root { color-scheme: dark; }
-      body {
-          background-color: #000;
-          color: #fff;
-          margin: 0;
-          padding: 0;
-          height: 100vh;
-          width: 100vw;
-          overflow: hidden;
-          -webkit-font-smoothing: antialiased;
+      :root {
+        /* Default Dark Theme Palette */
+        --color-primary: #F8130D;
+        --color-secondary: #FB4606;
+        --color-highlight: #FCF721;
+        
+        --color-surface-deep: #030303;
+        --color-surface-panel: #050505;
+        --color-surface-grid: #080808;
+        --color-surface-card: #0A0A0A;
+        --color-surface-elevated: #111111;
+        --color-surface-hover: #1A1A1A;
+        --color-surface-border: #222222;
+        --color-surface-border-light: #333333;
+        
+        --color-text-main: #FFFFFF;
+        --color-text-muted: #9CA3AF;
+
+        --font-display: 'Koulen', sans-serif;
+        --font-mono: 'Orbitron', monospace;
+        --font-sans: 'Inter', sans-serif;
+        --font-graffiti: 'Rubik Wet Paint', cursive;
       }
+
+      /* Light Theme Overrides */
+      .light-theme {
+        --color-surface-deep: #E5E5E5;      /* Light Grey Background */
+        --color-surface-panel: #F0F0F0;     /* Slightly lighter panel */
+        --color-surface-grid: #F5F5F5;
+        --color-surface-card: #FFFFFF;      /* White cards */
+        --color-surface-elevated: #FFFFFF;  /* White buttons */
+        --color-surface-hover: #EAEAEA;
+        --color-surface-border: #D1D5DB;    /* Gray-300 */
+        --color-surface-border-light: #9CA3AF; /* Gray-400 */
+        
+        --color-text-main: #111827;         /* Gray-900 */
+        --color-text-muted: #4B5563;        /* Gray-600 */
+      }
+
+      body {
+          background-color: var(--color-surface-deep);
+          color: var(--color-text-main);
+          font-family: var(--font-sans);
+          overscroll-behavior: none;
+          overflow: hidden;
+          position: fixed;
+          width: 100%;
+          height: 100dvh;
+          -webkit-font-smoothing: antialiased;
+          transition: background-color 0.3s ease, color 0.3s ease;
+      }
+
+      /* UTILITY OVERRIDES FOR LIGHT THEME COMPATIBILITY */
+      /* This allows existing components using text-white to adapt without rewriting them all */
+      .light-theme .text-white { color: #111827 !important; }
+      .light-theme .text-gray-300 { color: #4B5563 !important; } 
+      .light-theme .text-gray-400 { color: #6B7280 !important; }
+      .light-theme .text-gray-500 { color: #6B7280 !important; }
+      .light-theme .border-white\/5 { border-color: rgba(0,0,0,0.05) !important; }
+      .light-theme .border-white\/10 { border-color: rgba(0,0,0,0.1) !important; }
+      .light-theme .bg-black { background-color: var(--color-surface-deep) !important; }
+      .light-theme .bg-black\/50 { background-color: rgba(255,255,255,0.5) !important; }
+      .light-theme .bg-black\/80 { background-color: rgba(255,255,255,0.8) !important; }
       
-      /* Smooth scroll for toolbars */
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-      /* Android/Pixel 7 specific safe areas */
-      main {
-        padding-top: env(safe-area-inset-top);
-        padding-bottom: env(safe-area-inset-bottom);
+      .cyber-grid {
+          background-image: 
+              linear-gradient(rgba(248, 19, 13, 0.05) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(248, 19, 13, 0.05) 1px, transparent 1px);
+          background-size: 40px 40px;
+          pointer-events: none;
       }
 
-      /* Native feeling for PWA */
       * { -webkit-tap-highlight-color: transparent; }
+
+      input, textarea, select {
+        font-size: 16px !important; 
+      }
+
+      .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: var(--color-surface-panel); }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: var(--color-surface-border); border-radius: 10px; }
+
+      .btn-sakuga {
+        font-family: var(--font-display);
+        transform: skew(-10deg);
+        transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        position: relative;
+        overflow: hidden;
+        border-width: 2px;
+      }
     </style>
   <script type="importmap">
 {
   "imports": {
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
     "@google/genai": "https://esm.sh/@google/genai@^1.35.0",
-    "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.0",
+    "process": "https://esm.sh/process@^0.11.10",
     "vite": "https://esm.sh/vite@^7.3.1",
+    "@capacitor/cli": "https://esm.sh/@capacitor/cli@^8.0.0",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }

@@ -1,1 +1,140 @@
-/* Restored placeholder file. Main styles are in index.css */
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==================== SAKUGA THEME CORE ==================== */
+:root {
+  --color-primary: #F8130D; /* Red */
+  --color-secondary: #FB4606; /* Orange */
+  --color-highlight: #FCF721; /* Yellow */
+  --color-background: #000000;
+  --color-surface: #0A0A0A;
+  --color-surface-light: #111111;
+  --color-border: #222222;
+  --color-text: #FFFFFF;
+  --color-text-muted: #9CA3AF;
+  --font-display: 'Koulen', sans-serif;
+  --font-mono: 'Orbitron', monospace;
+  --font-sans: 'Inter', sans-serif;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  /* Prevent pull-to-refresh on mobile which wipes app state */
+  overscroll-behavior: none;
+  /* Prevent horizontal scroll */
+  overflow-x: hidden;
+  position: fixed;
+  width: 100%;
+  height: 100%;
+}
+
+/* Base Input/Textarea/Select Styling */
+input[type="text"],
+input[type="number"],
+input[type="range"],
+textarea,
+select {
+  background-color: var(--color-background);
+  border: 2px solid var(--color-border);
+  color: var(--color-text);
+  padding: 0.75rem 1rem;
+  transition: all 0.2s ease-in-out;
+  font-family: var(--font-mono);
+  /* Force 16px font size on mobile to prevent iOS zoom-on-focus */
+  font-size: 16px; 
+}
+
+@media (min-width: 768px) {
+    input[type="text"],
+    input[type="number"],
+    textarea, /* Added textarea here */
+    select {
+        font-size: 14px;
+    }
+}
+
+input[type="text"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  /* pulse-glow animation is now handled by Tailwind's config */
+}
+
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='2' stroke='%23F8130D'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19.5 8.25-7.5 7.5-7.5-7.5' /%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 1em;
+  padding-right: 2.5rem;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: var(--color-surface); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+
+
+/* ==================== SAKUGA ANIMATIONS & KEYFRAMES ==================== */
+/* All keyframes moved to tailwind.config.js */
+
+/* ==================== SAKUGA UTILITY CLASSES ==================== */
+.cyber-grid {
+  background-image:
+    linear-gradient(var(--color-primary), 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-secondary), 1px, transparent 1px);
+  background-size: 50px 50px;
+  opacity: 0.1;
+}
+
+.btn-sakuga {
+  font-family: var(--font-display);
+  transform: skew(-10deg);
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+  overflow: hidden;
+  border-width: 2px;
+}
+
+.btn-sakuga:hover {
+  transform: skew(-10deg) translateY(-2px);
+  box-shadow: 0 5px 25px rgba(248, 19, 13, 0.4);
+  border-color: var(--color-primary);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+}
+.btn-sakuga:active {
+  transform: skew(-10deg) scale(0.98);
+  box-shadow: 0 2px 5px rgba(248, 19, 13, 0.2);
+}
+
+.btn-sakuga::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  transition: none;
+  z-index: 1;
+  pointer-events: none;
+}
+.btn-sakuga:hover::before {
+  left: 100%;
+  transition: left 0.6s ease-out;
+}
+
+.btn-sakuga > * {
+  transform: skew(10deg);
+  position: relative;
+  z-index: 2;
+}

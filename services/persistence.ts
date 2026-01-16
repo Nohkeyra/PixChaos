@@ -1,20 +1,24 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
 
 const DB_NAME = 'PixshopDB';
-const DB_VERSION = 1;
+const DB_VERSION = 3; // Bumped to 3 to force schema validation and recovery
 const STORE_NAME = 'history';
+const PRESETS_STORE = 'style_presets';
 
-// Helper: Convert Data URL to Blob for efficient binary storage
-const dataUrlToBlob = (dataUrl: string): Blob => {
+export const dataUrlToBlob = (dataUrl: string): Blob => {
   try {
-    const arr = dataUrl.split(',');
-    const mimeMatch = arr[0].match(/:(.*?);/);
+    const parts = dataUrl.split(',');
+    if (parts.length < 2) {
+      console.warn("Invalid Data URL format, defaulting to image/png for blob conversion.");
+      return new Blob([], { type: 'image/png' });
+    }
+
+    const mimeMatch = parts[0].match(/:(.*?);/);
     const mime = mimeMatch ? mimeMatch[1] : 'image/png';
-    const bstr = atob(arr[1]);
+    const bstr = atob(parts[1]);
     let n = bstr.length;
     const u8arr = new Uint8Array(n);
     while (n--) {
@@ -22,31 +26,33 @@ const dataUrlToBlob = (dataUrl: string): Blob => {
     }
     return new Blob([u8arr], { type: mime });
   } catch (e) {
-    console.error("Failed to convert data URL to blob:", e);
-    return new Blob([], { type: 'image/png' });
+    console.error("Failed to convert data URL to blob, using fallback empty blob:", e);
+    return new Blob([], { type: 'image/png' }); // Return empty blob on error
   }
 };
 
-// Helper: Base64 to File (Migration Fallback)
 const base64ToFile = (dataurl: string, filename: string, mimeType: string, lastModified: number): File => {
+    // Ensure mimeType is an image type, fallback if not.
+    const effectiveMimeType = mimeType.startsWith('image/') ? mimeType : 'image/png';
+
     if (!dataurl || !dataurl.includes(',')) {
-        return new File([""], filename, {type: mimeType || 'application/octet-stream', lastModified: lastModified});
+        // Fallback for invalid data URL
+        return new File([""], filename, {type: effectiveMimeType, lastModified: lastModified});
     }
     const blob = dataUrlToBlob(dataurl);
-    return new File([blob], filename, {type: mimeType, lastModified: lastModified});
+    return new File([blob], filename, {type: effectiveMimeType, lastModified: lastModified});
 }
 
 interface SerializedFile {
     name: string;
     type: string;
     lastModified: number;
-    data: Blob | string; // Use Blob for binary efficiency
+    data: Blob | string;
     isUrl?: boolean;
 }
 
-// Internal storage format
 interface StoredAppState {
-    id: string; // 'current'
+    id: string;
     history: SerializedFile[];
     historyIndex: number;
     activeTab: string;
@@ -58,7 +64,6 @@ interface StoredAppState {
     timestamp: number;
 }
 
-// Public Interface used by the App
 interface AppState {
     history: (File | string)[];
     historyIndex: number;
@@ -76,8 +81,15 @@ const openDB = (): Promise<IDBDatabase> => {
 
         request.onupgradeneeded = (event) => {
             const db = (event.target as IDBOpenDBRequest).result;
+            
+            // Store 1: Session History
             if (!db.objectStoreNames.contains(STORE_NAME)) {
                 db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            }
+
+            // Store 2: Style Presets
+            if (!db.objectStoreNames.contains(PRESETS_STORE)) {
+                db.createObjectStore(PRESETS_STORE, { keyPath: 'id' });
             }
         };
 
@@ -102,10 +114,9 @@ export const saveState = async (
     isPlatinumTier: boolean = true
 ): Promise<void> => {
     try {
-        const serializedHistory: SerializedFile[] = history.map((item) => {
+        const serializedHistory: SerializedFile[] = await Promise.all(history.map(async (item) => {
             if (typeof item === 'string') {
                 if (item.startsWith('data:')) {
-                    // Convert large data URLs to binary Blobs to save space and avoid string limits
                     const blob = dataUrlToBlob(item);
                     return {
                         name: `generated-${Date.now()}.png`,
@@ -115,15 +126,16 @@ export const saveState = async (
                         isUrl: false,
                     };
                 }
-                return {
-                    name: 'remote-url',
-                    type: 'application/octet-stream',
+                console.warn("Attempted to save a remote URL directly. Converting to placeholder image.");
+                const placeholderBlob = new Blob([], { type: 'image/png' });
+                 return {
+                    name: 'placeholder-remote.png',
+                    type: 'image/png',
                     lastModified: Date.now(),
-                    data: item,
-                    isUrl: true,
+                    data: placeholderBlob,
+                    isUrl: false,
                 };
             }
-            // Item is already a File object (binary)
             return {
                 name: item.name,
                 type: item.type,
@@ -131,7 +143,7 @@ export const saveState = async (
                 data: item,
                 isUrl: false,
             };
-        });
+        }));
 
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -162,6 +174,7 @@ export const saveState = async (
         });
     } catch (e) {
         console.error("Persistence save failed:", e instanceof Error ? e.message : e);
+        throw e;
     }
 };
 
@@ -178,16 +191,13 @@ export const loadState = async (): Promise<AppState | null> => {
                 if (result) {
                     const history = result.history.map(f => {
                         if (f.isUrl) {
-                            return f.data as string;
+                            return new File([""], "placeholder-remote.png", { type: 'image/png', lastModified: Date.now() });
                         }
                         
-                        // Migration and Reconstruction logic
                         if (typeof f.data === 'string') {
-                            // Support legacy Base64 stored data
                             return base64ToFile(f.data, f.name, f.type, f.lastModified);
                         }
                         
-                        // New binary Blob/File storage
                         return new File([f.data as Blob], f.name, { 
                             type: f.type, 
                             lastModified: f.lastModified 
@@ -245,4 +255,90 @@ export const nukeDatabase = async (): Promise<void> => {
             resolve();
         };
     });
+};
+
+// --- ROBUST PRESET MANAGEMENT ---
+
+export const saveUserPresets = async (presets: any[]): Promise<void> => {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(PRESETS_STORE, 'readwrite');
+        const store = tx.objectStore(PRESETS_STORE);
+        
+        // We now enforce the bundle format 'custom_presets' for performance and consistency
+        const entry = { id: 'custom_presets', data: presets, timestamp: Date.now() };
+        
+        const request = store.put(entry);
+        
+        return new Promise((resolve, reject) => {
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+            tx.onerror = () => reject(tx.error);
+        });
+    } catch (e) {
+        console.error("Failed to save presets to IDB", e);
+        throw e;
+    }
+};
+
+export const loadUserPresets = async (): Promise<any[]> => {
+    try {
+        const db = await openDB();
+        const tx = db.transaction(PRESETS_STORE, 'readwrite'); // Readwrite to allow migration
+        const store = tx.objectStore(PRESETS_STORE);
+        
+        // Use getAll to find *any* saved data, regardless of key format (bundle vs individual)
+        const request = store.getAll();
+        
+        return new Promise((resolve, reject) => {
+            request.onsuccess = () => {
+                const results = request.result;
+
+                // STRATEGY 1: Check for standard Bundle
+                const bundle = results.find(r => r.id === 'custom_presets');
+                if (bundle && bundle.data && Array.isArray(bundle.data)) {
+                    resolve(bundle.data);
+                    return;
+                }
+
+                // STRATEGY 2: Check for Un-bundled Individual Items (Migration from v1/v2 schema)
+                // Filter out the 'custom_presets' key if it exists but is invalid
+                const individualItems = results.filter(r => r.id !== 'custom_presets');
+                
+                if (individualItems.length > 0) {
+                    console.log("Persistence: Detected individual presets. Migrating to bundle format...");
+                    const validPresets = individualItems;
+                    
+                    // Save them as a bundle for future efficiency
+                    store.put({ id: 'custom_presets', data: validPresets, timestamp: Date.now() });
+                    
+                    // We can optionally delete individual items here to clean up, but keeping them is safer for now.
+                    // Returning migrated data.
+                    resolve(validPresets);
+                    return;
+                }
+
+                // STRATEGY 3: Last Resort - LocalStorage check (Legacy Migration)
+                const legacy = localStorage.getItem('user_style_presets');
+                if (legacy) {
+                    try {
+                        const parsed = JSON.parse(legacy);
+                        if (Array.isArray(parsed) && parsed.length > 0) {
+                            console.log("Persistence: Migrating presets from LocalStorage...");
+                            store.put({ id: 'custom_presets', data: parsed, timestamp: Date.now() });
+                            resolve(parsed);
+                            return;
+                        }
+                    } catch(e) {}
+                }
+
+                // No data found
+                resolve([]);
+            };
+            request.onerror = () => reject(request.error);
+        });
+    } catch (e) {
+        console.error("Failed to load presets from IDB", e);
+        return [];
+    }
 };

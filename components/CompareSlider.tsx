@@ -31,8 +31,8 @@ export const CompareSlider: React.FC<CompareSliderProps> = ({ originalImage, mod
         const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
         const percentage = (x / rect.width) * 100;
         setSliderPosition(percentage);
-    }, []);
-    
+    }, [isDraggingRef, containerRef]); // Corrected dependencies
+
     const onDragMove = useCallback((e: MouseEvent | TouchEvent) => {
         handleDragMove(getClientX(e));
     }, [handleDragMove]);
@@ -41,7 +41,7 @@ export const CompareSlider: React.FC<CompareSliderProps> = ({ originalImage, mod
         if (isDraggingRef.current) {
             isDraggingRef.current = false;
         }
-    }, []);
+    }, [isDraggingRef]); // Corrected dependencies
 
     useEffect(() => {
         // Add passive: false to prevent scrolling on mobile while dragging

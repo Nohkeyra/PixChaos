@@ -1,3 +1,5 @@
+
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -30,10 +32,10 @@ export const Spinner: React.FC = () => {
   return (
     <div className="relative flex items-center justify-center w-64 h-64 md:w-80 md:h-80">
         {/* Ambient Glow */}
-        <div className="absolute inset-0 bg-gradient-to-tr from-red-500/20 to-orange-500/20 rounded-full blur-[60px] animate-pulse"></div>
+        <div className="absolute inset-0 bg-gradient-to-tr from-red-500/20 to-orange-500/20 rounded-full blur-[60px] animate-pulse-glow"></div>
 
         {/* 1. Outer Rotating Ring (Clockwise) */}
-        <div className="absolute inset-0 animate-[spin_8s_linear_infinite]">
+        <div className="absolute inset-0 animate-spin-slow">
              <svg viewBox="0 0 100 100" className="w-full h-full fill-none stroke-red-500 stroke-[0.5] opacity-60">
                 <circle cx="50" cy="50" r="48" strokeDasharray="1, 4" strokeLinecap="square" />
                 <path d="M50 2 A 48 48 0 0 1 98 50" stroke="#FB4606" strokeWidth="1" strokeDasharray="10, 30" className="animate-pulse" />
@@ -72,7 +74,7 @@ export const Spinner: React.FC = () => {
 
         {/* 5. Center Kanji Glitch */}
         <div className="relative z-10 flex flex-col items-center justify-center">
-             <div className="relative text-6xl font-black text-white" style={{ fontFamily: 'Noto Sans JP, sans-serif' }}>
+             <div className="relative text-6xl font-black text-white font-sans">
                 <span className="absolute inset-0 text-red-500 translate-x-[-2px] animate-[glitch-anim-1_2s_infinite_linear_alternate-reverse] opacity-70 mix-blend-screen">{kanji}</span>
                 <span className="absolute inset-0 text-orange-500 translate-x-[2px] animate-[glitch-anim-2_3s_infinite_linear_alternate-reverse] opacity-70 mix-blend-screen">{kanji}</span>
                 <span className="relative z-10">{kanji}</span>
@@ -82,7 +84,7 @@ export const Spinner: React.FC = () => {
                  <div className="flex gap-1">
                      <span className="w-1 h-1 bg-orange-500"></span>
                      <span className="w-16 h-1 bg-red-500/50 overflow-hidden relative">
-                         <div className="absolute inset-0 bg-red-500 animate-[shimmer_1s_infinite]"></div>
+                         <div className="absolute inset-0 bg-red-500 animate-shimmer"></div>
                      </span>
                      <span className="w-1 h-1 bg-orange-500"></span>
                  </div>
@@ -125,12 +127,12 @@ export const PanelScanner: React.FC<PanelScannerProps> = ({ theme = 'red' }) => 
                  </div>
             </div>
 
-            <div className={`${colors.textLight} font-black italic uppercase tracking-widest text-lg animate-pulse`} style={{ fontFamily: 'Koulen' }}>
+            <div className={`${colors.textLight} font-black italic uppercase tracking-widest text-lg animate-pulse font-display`}>
                 PROCESSING
             </div>
             
             <div className="flex gap-1 mt-2">
-                <div className={`w-1 h-4 ${colors.sub} animate-[height-jitter_0.5s_infinite]`}></div>
+                <div className={`w-1 h-4 ${colors.sub} animate-height-jitter`}></div>
                 <div className={`w-1 h-6 ${colors.bg} animate-[height-jitter_0.5s_infinite_0.1s]`}></div>
                 <div className={`w-1 h-3 ${colors.sub} animate-[height-jitter_0.5s_infinite_0.2s]`}></div>
                 <div className={`w-1 h-8 ${colors.bg} animate-[height-jitter_0.5s_infinite_0.3s]`}></div>
@@ -138,7 +140,7 @@ export const PanelScanner: React.FC<PanelScannerProps> = ({ theme = 'red' }) => 
             </div>
 
             {/* Scanning Line */}
-            <div className={`absolute top-0 left-0 w-full h-[2px] ${colors.bg} ${colors.shadow} animate-[scan-sweep-vertical_2s_linear_infinite]`}></div>
+            <div className={`absolute top-0 left-0 w-full h-[2px] ${colors.bg} ${colors.shadow} animate-scan-sweep-vertical`}></div>
         </div>
     );
 };

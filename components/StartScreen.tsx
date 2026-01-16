@@ -76,27 +76,32 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
         
         {/* Logo Section */}
         <div className={`text-center mt-6 mb-12 transition-all duration-1000 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'}`}>
-          <div className="inline-block relative">
+          <div className="inline-block relative transform -rotate-3">
             <h1 
-              className="text-6xl sm:text-8xl font-black italic tracking-tighter text-white"
+              className="text-7xl sm:text-9xl font-graffiti text-white tracking-wide relative z-10"
               style={{ 
-                fontFamily: 'var(--font-display)',
-                letterSpacing: '-0.04em'
+                textShadow: '4px 4px 0px #F8130D, 8px 8px 0px rgba(0,0,0,0.5)',
+                filter: 'drop-shadow(0 0 15px rgba(248,19,13,0.4))'
               }}
             >
               PIXSH<span className="text-red-600">O</span>P
             </h1>
-            <div className="absolute -top-2 -right-4 px-2 py-0.5 bg-red-600 text-[9px] font-mono font-black rounded skew-x-[-15deg] shadow-[0_0_15px_rgba(220,38,38,0.5)]">
+            {/* Tag splatter/drip decoration */}
+            <div className="absolute -bottom-4 right-0 text-red-600 font-graffiti text-4xl opacity-80" style={{ transform: 'rotate(-10deg)' }}>
+                "
+            </div>
+            
+            <div className="absolute -top-4 -right-8 px-3 py-1 bg-red-600 text-black text-[12px] font-black italic rounded-sm skew-x-[-15deg] shadow-[0_0_15px_rgba(220,38,38,0.5)] border-2 border-white transform rotate-3">
               PRO V4.0
             </div>
           </div>
           
-          <div className="flex items-center justify-center gap-4 mt-3 opacity-60">
-            <div className="h-[1px] w-8 bg-gradient-to-r from-transparent to-red-600"></div>
-            <p className="text-gray-300 font-mono text-[9px] tracking-[0.4em] uppercase">
+          <div className="flex items-center justify-center gap-4 mt-6 opacity-60">
+            <div className="h-[2px] w-8 bg-gradient-to-r from-transparent to-red-600"></div>
+            <p className="text-gray-300 font-mono text-[10px] tracking-[0.4em] uppercase font-bold">
               The Sakuga Visual Engine
             </p>
-            <div className="h-[1px] w-8 bg-gradient-to-l from-transparent to-red-600"></div>
+            <div className="h-[2px] w-8 bg-gradient-to-l from-transparent to-red-600"></div>
           </div>
         </div>
 
@@ -137,7 +142,7 @@ export const StartScreen: React.FC<StartScreenProps> = ({ onStart }) => {
                   
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-black text-white text-lg sm:text-xl uppercase tracking-tighter italic" style={{ fontFamily: 'var(--font-display)' }}>
+                      <h3 className="font-black text-white text-lg sm:text-xl uppercase tracking-tighter italic font-display">
                         {m.title}
                       </h3>
                       <ZapIcon className={`w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity ${m.accent.split(' ')[0]}`} />

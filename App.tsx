@@ -4,26 +4,39 @@
 */
 
 import React, { useState, useCallback, useRef, useEffect, useMemo, useContext } from 'react';
-import { clearState } from './services/persistence';
+import { clearState, nukeDatabase, dataUrlToBlob } from './services/persistence';
 import { AppContext } from './context/AppContext';
 import { Header } from './components/Header';
 import { Spinner } from './components/Spinner';
 import { FilterPanel } from './components/FilterPanel';
 import { AdjustmentPanel } from './components/AdjustmentPanel';
-import TypographicPanel from './components/TypographicPanel';
+import { TypographicPanel } from './components/TypographicPanel';
 import { VectorArtPanel } from './components/VectorArtPanel';
 import { FluxPanel } from './components/FluxPanel';
 import { InpaintPanel } from './components/InpaintPanel';
 import { StyleExtractorPanel } from './components/StyleExtractorPanel';
 import { CompareSlider } from './components/CompareSlider';
 import { ZoomPanViewer } from './components/ZoomPanViewer';
-import { UndoIcon, RedoIcon, CompareIcon, XIcon, MagicWandIcon, PaletteIcon, SunIcon, EraserIcon, TypeIcon, VectorIcon, DownloadIcon, StyleExtractorIcon } from './components/icons';
+import { UndoIcon, RedoIcon, CompareIcon, XIcon, DownloadIcon, HistoryIcon, BoltIcon, PaletteIcon, SunIcon, EraserIcon, TypeIcon, VectorIcon, StyleExtractorIcon, TrashIcon, PlusIcon } from './components/icons';
 import { SystemConfigWidget } from './components/SystemConfigWidget';
 import { ImageUploadPlaceholder } from './components/ImageUploadPlaceholder';
 import { StartScreen } from './components/StartScreen';
 import * as geminiService from './services/geminiService';
+import { PROTOCOLS, RoutedStyle } from './services/geminiService';
+import { FastAiWidget } from './components/FastAiWidget';
+import { HistoryGrid } from './components/HistoryGrid';
+import { debugService } from './services/debugService';
+import { DebugConsole } from './components/DebugConsole';
+import { CameraCaptureModal } from './components/CameraCaptureModal';
 
 export type ActiveTab = 'flux' | 'style_extractor' | 'filters' | 'adjust' | 'inpaint' | 'typography' | 'vector';
+
+export interface HistoryItem {
+    content: File | string;
+    prompt?: string;
+    type: 'upload' | 'generation' | 'edit' | 'transformation';
+    timestamp: number;
+}
 
 export type GenerationRequest = {
     type: ActiveTab;
@@ -34,100 +47,189 @@ export type GenerationRequest = {
     isChaos?: boolean;
     batchSize?: number;
     maskBase64?: string;
+    systemInstructionOverride?: string;
+    negativePrompt?: string; 
+    denoisingInstruction?: string; 
 };
 
 export const App: React.FC = () => {
-    const { isLoading, setIsLoading } = useContext(AppContext);
+    const { isLoading, setIsLoading, isFastAiEnabled, theme } = useContext(AppContext);
     const [appStarted, setAppStarted] = useState(false);
-    const [history, setHistory] = useState<(File | string)[]>([]);
-    const [historyIndex, setHistoryIndex] = useState(-1);
+    const [history, setHistory] = useState<HistoryItem[]>([]); 
+    const [historyIndex, setHistoryIndex] = useState(-1); 
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<ActiveTab | null>('flux');
     const [isComparing, setIsComparing] = useState(false);
     const [viewerInstruction, setViewerInstruction] = useState<string | null>(null);
+    const [showHistoryGrid, setShowHistoryGrid] = useState(false);
+    const [showDebugger, setShowDebugger] = useState(false);
+    const [showCamera, setShowCamera] = useState(false);
     
+    const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
     const [fluxPrompt, setFluxPrompt] = useState('');
     const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
     const [brushSize, setBrushSize] = useState(40);
-    const maskCanvasRef = useRef<HTMLCanvasElement>(null);
+    
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Initial Debug Service
+    useEffect(() => {
+        debugService.init();
+    }, []);
+
+    const currentItem = useMemo(() => history[historyIndex], [history, historyIndex]);
 
     const currentImageFile = useMemo(() => {
-        const item = history[historyIndex];
-        return item instanceof File ? item : null;
-    }, [history, historyIndex]);
+        return currentItem?.content instanceof File ? currentItem.content : null;
+    }, [currentItem]);
     
     const currentMediaUrl = useMemo(() => {
-        const item = history[historyIndex];
-        if (!item) return null;
-        if (typeof item === 'string') return item;
-        return URL.createObjectURL(item);
-    }, [history, historyIndex]);
+        if (!currentItem) return null;
+        if (typeof currentItem.content === 'string') return currentItem.content;
+        return URL.createObjectURL(currentItem.content);
+    }, [currentItem]);
 
     const originalImageUrl = useMemo(() => {
         const item = history[0];
         if (!item) return null;
-        if (typeof item === 'string') return item;
-        return URL.createObjectURL(item);
+        if (typeof item.content === 'string') return item.content;
+        return URL.createObjectURL(item.content);
     }, [history]);
-
-    // Removed useEffect for loadState() to ensure fresh start on reload
 
     const handleImageUpload = useCallback(async (file: File) => {
         setIsLoading(true);
         setError(null);
         try {
-            setHistory([file]);
-            setHistoryIndex(0);
+            const newItem: HistoryItem = {
+                content: file,
+                type: 'upload',
+                timestamp: Date.now()
+            };
+            setHistory(prev => [...prev.slice(0, historyIndex + 1), newItem]);
+            setHistoryIndex(prev => prev + 1);
             setAppStarted(true);
         } catch (e: any) {
             setError(`Upload error: ${e.message}`);
         } finally {
             setIsLoading(false);
         }
-    }, [setIsLoading]);
+    }, [setIsLoading, historyIndex]);
 
-    const handleDownload = useCallback(() => {
+    const handleDownload = useCallback(async () => {
         if (!currentMediaUrl) return;
-        
-        const link = document.createElement('a');
-        link.href = currentMediaUrl;
-        
-        // Determine extension
-        let extension = 'png';
-        if (currentImageFile?.type?.includes('video') || currentMediaUrl.startsWith('blob:') && currentImageFile?.name?.match(/\.(mp4|webm)$/i)) {
-             extension = 'mp4'; 
-        } else if (typeof history[historyIndex] === 'string' && (history[historyIndex] as string).startsWith('data:image/jpeg')) {
-             extension = 'jpg';
+        setIsLoading(true);
+
+        try {
+            let baseName = "pixshop-creation";
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            
+            if (currentImageFile?.name) {
+                const lastDotIndex = currentImageFile.name.lastIndexOf('.');
+                baseName = lastDotIndex !== -1 
+                    ? currentImageFile.name.substring(0, lastDotIndex) 
+                    : currentImageFile.name;
+            } else {
+                baseName = `pixshop-art-${timestamp}`;
+            }
+
+            let blob: Blob;
+            if (currentMediaUrl.startsWith('data:')) {
+                blob = dataUrlToBlob(currentMediaUrl);
+            } else {
+                const response = await fetch(currentMediaUrl);
+                blob = await response.blob();
+            }
+
+            const mimeType = blob.type;
+            let extension = 'png';
+            if (mimeType.includes('jpeg') || mimeType.includes('jpg')) extension = 'jpg';
+            else if (mimeType.includes('webp')) extension = 'webp';
+            else if (mimeType.includes('gif')) extension = 'gif';
+            else if (mimeType.includes('svg')) extension = 'svg';
+
+            const filename = `${baseName}.${extension}`;
+            const file = new File([blob], filename, { type: mimeType });
+
+            let shareSuccess = false;
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                try {
+                    await navigator.share({
+                        files: [file],
+                        title: 'Pixshop Export',
+                        text: 'Created with Pixshop AI'
+                    });
+                    shareSuccess = true;
+                } catch (shareError) {
+                    console.warn("Share failed or cancelled:", shareError);
+                }
+            }
+
+            if (!shareSuccess) {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                setTimeout(() => URL.revokeObjectURL(url), 2000);
+            }
+
+        } catch (e: any) {
+            console.error("Download mechanism failed:", e);
+            setError("Could not save image.");
+            if (currentMediaUrl) {
+                 window.open(currentMediaUrl, '_blank');
+            }
+        } finally {
+            setIsLoading(false);
         }
+    }, [currentMediaUrl, currentImageFile, setIsLoading]);
 
-        link.download = `pixshop-edit-${Date.now()}.${extension}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }, [currentMediaUrl, currentImageFile, history, historyIndex]);
-
-    const handleClearSession = useCallback(() => {
+    const handleClearSession = useCallback(async () => { 
         setHistory([]);
         setHistoryIndex(-1);
         setPreviewImageUrl(null);
         setIsComparing(false);
-        clearState().catch(console.error);
+        await clearState().catch(console.error); 
     }, []);
 
-    const handleTabSwitch = useCallback((tab: ActiveTab) => {
-        // Clear image in upload field when selecting other tools tab
+    const handleTabSwitch = useCallback(async (tab: ActiveTab) => { 
         if (tab !== activeTab) {
-            setHistory([]);
-            setHistoryIndex(-1);
-            setPreviewImageUrl(null);
-            setIsComparing(false);
-            clearState().catch(console.error);
+            setPendingPrompt(null);
             setActiveTab(tab);
         }
     }, [activeTab]);
 
-    const handleGenerationRequest = async (req: GenerationRequest) => {
-        // Ensure API Key is selected - Safe Check
+    const handleRouteStyle = useCallback((style: RoutedStyle) => {
+        if (style.target_panel_id === 'filter_panel') {
+             setActiveTab('filters');
+             setPendingPrompt(style.preset_data.prompt);
+        } else if (style.target_panel_id === 'vector_art_panel') {
+             setActiveTab('vector');
+             setPendingPrompt(style.preset_data.prompt);
+        } else if (style.target_panel_id === 'typographic_panel') {
+             setActiveTab('typography');
+             setPendingPrompt(style.preset_data.prompt);
+        } else {
+             setActiveTab('flux');
+             setFluxPrompt(style.preset_data.prompt);
+        }
+    }, []);
+
+    const handleSoftFix = useCallback(() => {
+        window.location.reload();
+    }, []);
+
+    const handleHardFix = useCallback(async () => {
+        if(window.confirm("This will factory reset the app and delete all history. Continue?")) {
+            await nukeDatabase();
+            window.location.reload();
+        }
+    }, []);
+
+    const handleGenerationRequest = useCallback(async (req: GenerationRequest) => {
         const aistudio = (window as any).aistudio;
         if (aistudio) {
             try {
@@ -145,225 +247,311 @@ export const App: React.FC = () => {
         setIsLoading(true);
         setError(null);
         setPreviewImageUrl(null);
+        
         try {
-            const source = (req.useOriginal ? history[0] : currentImageFile) as File || currentImageFile;
+            const source = (req.useOriginal ? history[0]?.content : currentItem?.content) as File || (currentItem?.content as File);
             let result: string = '';
 
             switch(req.type) {
                 case 'flux':
                     result = (req.forceNew || !source)
-                        ? await geminiService.generateFluxTextToImage(req.prompt!, req.aspectRatio, req.isChaos)
-                        : await geminiService.generateFluxImage(source, req.prompt!, req.aspectRatio, req.isChaos);
+                        ? await geminiService.generateFluxTextToImage(req.prompt!, { aspectRatio: req.aspectRatio, isChaos: req.isChaos, systemInstructionOverride: req.systemInstructionOverride, negativePrompt: req.negativePrompt }, isFastAiEnabled)
+                        : await geminiService.generateFluxImage(source, req.prompt!, { aspectRatio: req.aspectRatio, isChaos: req.isChaos, systemInstructionOverride: req.systemInstructionOverride, negativePrompt: req.negativePrompt, denoisingInstruction: req.denoisingInstruction }, isFastAiEnabled);
                     break;
                 case 'filters':
-                    if (source) result = await geminiService.generateFilteredImage(source, req.prompt!, req.aspectRatio);
+                case 'adjust':
+                    if (source) result = await geminiService.generateFilteredImage(source, req.prompt!, { aspectRatio: req.aspectRatio, systemInstructionOverride: req.systemInstructionOverride || PROTOCOLS.IMAGE_TRANSFORMER, negativePrompt: req.negativePrompt, denoisingInstruction: req.denoisingInstruction }, isFastAiEnabled);
                     break;
                 case 'inpaint':
-                    if (source && req.maskBase64) result = await geminiService.generateInpaintedImage(source, req.maskBase64, req.prompt!);
+                    if (source) {
+                        if (req.maskBase64 && req.maskBase64.length > 0) {
+                             result = await geminiService.generateInpaintedImage(source, req.maskBase64, req.prompt!, { systemInstructionOverride: req.systemInstructionOverride, negativePrompt: req.negativePrompt, denoisingInstruction: req.denoisingInstruction }, isFastAiEnabled);
+                        } else {
+                             console.warn("Inpaint requested without mask. Falling back to full image edit.");
+                             const fallbackPrompt = `${req.prompt} (Apply this change to the entire image context)`;
+                             result = await geminiService.generateFilteredImage(source, fallbackPrompt, { aspectRatio: req.aspectRatio, systemInstructionOverride: PROTOCOLS.IMAGE_TRANSFORMER, negativePrompt: req.negativePrompt }, isFastAiEnabled);
+                        }
+                    }
                     break;
                 case 'typography':
                     result = (req.forceNew || !source) 
-                        ? await geminiService.generateFluxTextToImage(req.prompt!, req.aspectRatio, false)
-                        : await geminiService.generateFluxImage(source, req.prompt!, req.aspectRatio, false);
+                        ? await geminiService.generateFluxTextToImage(req.prompt!, { aspectRatio: req.aspectRatio, isChaos: false, systemInstructionOverride: req.systemInstructionOverride || PROTOCOLS.TYPOGRAPHER, negativePrompt: req.negativePrompt }, isFastAiEnabled)
+                        : await geminiService.generateFluxImage(source, req.prompt!, { aspectRatio: req.aspectRatio, isChaos: false, systemInstructionOverride: req.systemInstructionOverride || PROTOCOLS.IMAGE_TRANSFORMER, negativePrompt: req.negativePrompt, denoisingInstruction: req.denoisingInstruction }, isFastAiEnabled); 
                     break;
                 case 'vector':
                     result = (req.forceNew || !source) 
-                        ? await geminiService.generateFluxTextToImage(req.prompt!, req.aspectRatio, false)
-                        : await geminiService.generateFluxImage(source, req.prompt!, req.aspectRatio, false);
+                        ? await geminiService.generateFluxTextToImage(req.prompt!, { aspectRatio: req.aspectRatio, isChaos: false, systemInstructionOverride: req.systemInstructionOverride || PROTOCOLS.DESIGNER, negativePrompt: req.negativePrompt }, isFastAiEnabled)
+                        : await geminiService.generateFluxImage(source, req.prompt!, { aspectRatio: req.aspectRatio, isChaos: false, systemInstructionOverride: req.systemInstructionOverride || PROTOCOLS.DESIGNER, negativePrompt: req.negativePrompt }, isFastAiEnabled);
                     break;
-                default:
-                    if (source) {
-                        result = await geminiService.generateFilteredImage(source, req.prompt!, req.aspectRatio);
-                    }
+                case 'style_extractor':
+                    break;
             }
 
             if (result) {
-                const newHistory = history.slice(0, historyIndex + 1);
-                newHistory.push(result);
-                setHistory(newHistory);
-                setHistoryIndex(newHistory.length - 1);
+                 const blob = dataUrlToBlob(result);
+                 const file = new File([blob], `generated-${Date.now()}.png`, { type: 'image/png' });
+                 
+                 const newItem: HistoryItem = {
+                     content: file,
+                     type: 'generation',
+                     timestamp: Date.now(),
+                     prompt: req.prompt
+                 };
+                 
+                 setHistory(prev => [...prev.slice(0, historyIndex + 1), newItem]);
+                 setHistoryIndex(prev => prev + 1);
             }
+
         } catch (e: any) {
-            const errorMessage = e.message || String(e);
             console.error("Generation failed:", e);
-            
-            if (errorMessage.includes("Requested entity was not found") || errorMessage.includes("404") || errorMessage.includes("API key")) {
-                setError("API Key Error: Please re-select your API key.");
-                const aistudio = (window as any).aistudio;
-                if (aistudio && typeof aistudio.openSelectKey === 'function') {
-                    await aistudio.openSelectKey();
-                }
-            } else {
-                setError(errorMessage);
-            }
+            setError(e.message || "Generation failed. Please try again.");
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const handleUndo = () => setHistoryIndex(prev => Math.max(0, prev - 1));
-    const handleRedo = () => setHistoryIndex(prev => Math.min(history.length - 1, prev + 1));
-
-    const handleGoHome = () => {
-        if (window.confirm('Terminate current session? All unsaved visual DNA will be purged.')) {
-            clearState();
-            setHistory([]);
-            setHistoryIndex(-1);
-            setAppStarted(false);
-            setPreviewImageUrl(null);
-            setFluxPrompt('');
-        }
-    };
-
-    const toolPanels = useMemo(() => [
-        { id: 'flux', title: 'Flux', icon: MagicWandIcon, component: <FluxPanel onRequest={handleGenerationRequest} isLoading={isLoading} hasImage={!!currentImageFile} currentImageFile={currentImageFile} setViewerInstruction={setViewerInstruction} fluxPrompt={fluxPrompt} setFluxPrompt={setFluxPrompt} setPreviewImageUrl={setPreviewImageUrl} /> },
-        { id: 'style_extractor', title: 'Style', icon: StyleExtractorIcon, component: <StyleExtractorPanel isLoading={isLoading} hasImage={!!currentImageFile} currentImageFile={currentImageFile} onSendToFlux={(p) => { setFluxPrompt(p); handleTabSwitch('flux'); }} /> },
-        { id: 'filters', title: 'Filters', icon: PaletteIcon, component: <FilterPanel onRequest={handleGenerationRequest} isLoading={isLoading} setViewerInstruction={setViewerInstruction} /> },
-        { id: 'adjust', title: 'Adjust', icon: SunIcon, component: <AdjustmentPanel onRequest={handleGenerationRequest} isLoading={isLoading} setViewerInstruction={setViewerInstruction} /> },
-        { id: 'inpaint', title: 'Inpaint', icon: EraserIcon, component: <InpaintPanel onApplyInpaint={(p) => handleGenerationRequest({ type: 'inpaint', prompt: p, maskBase64: maskCanvasRef.current?.toDataURL() })} isLoading={isLoading} hasImage={!!currentImageFile} brushSize={brushSize} setBrushSize={setBrushSize} onClearMask={() => { const ctx = maskCanvasRef.current?.getContext('2d'); ctx?.clearRect(0, 0, maskCanvasRef.current!.width, maskCanvasRef.current!.height); }} /> },
-        { id: 'typography', title: 'Typography', icon: TypeIcon, component: <TypographicPanel onRequest={handleGenerationRequest} isLoading={isLoading} hasImage={!!currentImageFile} setViewerInstruction={setViewerInstruction} /> },
-        { id: 'vector', title: 'Vector', icon: VectorIcon, component: <VectorArtPanel onRequest={handleGenerationRequest} isLoading={isLoading} hasImage={!!currentImageFile} setViewerInstruction={setViewerInstruction} /> },
-    ], [isLoading, currentImageFile, fluxPrompt, brushSize, handleGenerationRequest, handleTabSwitch]);
+    }, [history, historyIndex, currentItem, isFastAiEnabled]);
 
     return (
-        <div className="flex flex-col h-[100dvh] bg-black text-white overflow-hidden font-sans select-none">
+        <div className={`h-full flex flex-col bg-surface-deep text-white ${theme === 'light' ? 'light-theme' : ''}`}>
+            {/* Widgets - Globally Positioned Over everything */}
+            <SystemConfigWidget 
+                onSoftFix={handleSoftFix} 
+                onHardFix={handleHardFix} 
+                onOpenDebugger={() => setShowDebugger(true)} 
+            />
+            <FastAiWidget />
+            
+            {/* Overlays */}
+            {showDebugger && <DebugConsole onClose={() => setShowDebugger(false)} />}
+            {showHistoryGrid && (
+                <HistoryGrid 
+                    history={history} 
+                    setHistoryIndex={(i) => { setHistoryIndex(i); setShowHistoryGrid(false); }} 
+                    onClose={() => setShowHistoryGrid(false)} 
+                />
+            )}
+            <CameraCaptureModal 
+                isOpen={showCamera} 
+                onClose={() => setShowCamera(false)} 
+                onCapture={handleImageUpload} 
+            />
+
             {!appStarted ? (
-                <StartScreen onStart={(tab) => { 
-                    setAppStarted(true); 
-                    if (tab) setActiveTab(tab as ActiveTab); 
+                <StartScreen onStart={(tab) => {
+                    if (tab) setActiveTab(tab);
+                    setAppStarted(true);
                 }} />
             ) : (
                 <>
-                    <Header isPlatinumTier={true} onGoHome={handleGoHome} />
-                    <main className="flex-1 flex flex-col relative overflow-hidden bg-[#030303]">
-                        {isLoading && (
-                            <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center animate-fade-in">
-                                <Spinner />
-                            </div>
-                        )}
-                        
-                        {/* Viewer Section */}
-                        <div className="flex-1 relative overflow-hidden flex flex-col">
-                            {previewImageUrl && !isLoading ? (
-                                <ZoomPanViewer src={previewImageUrl} />
-                            ) : currentMediaUrl ? (
-                                <>
-                                    <div className="absolute top-4 left-4 z-20 flex gap-2">
-                                        <button 
-                                            onClick={handleUndo} 
-                                            disabled={historyIndex <= 0} 
-                                            className="p-3 bg-black/60 border border-white/10 rounded-full backdrop-blur-xl active:scale-90 disabled:opacity-20 transition-all hover:bg-black/80"
-                                            aria-label="Undo"
-                                        >
-                                            <UndoIcon className="w-5 h-5"/>
-                                        </button>
-                                        <button 
-                                            onClick={handleRedo} 
-                                            disabled={historyIndex >= history.length - 1} 
-                                            className="p-3 bg-black/60 border border-white/10 rounded-full backdrop-blur-xl active:scale-90 disabled:opacity-20 transition-all hover:bg-black/80"
-                                            aria-label="Redo"
-                                        >
-                                            <RedoIcon className="w-5 h-5"/>
-                                        </button>
-                                        <div className="w-[1px] h-10 bg-white/10 mx-1" />
-                                        <button 
-                                            onClick={() => setIsComparing(!isComparing)} 
-                                            className={`p-3 bg-black/60 border border-white/10 rounded-full backdrop-blur-xl active:scale-90 transition-all ${isComparing ? 'text-red-500 border-red-500/50 shadow-[0_0_15px_rgba(248,19,13,0.3)]' : 'hover:bg-black/80'}`}
-                                            aria-label="Compare original and current"
-                                        >
-                                            <CompareIcon className="w-5 h-5"/>
-                                        </button>
-                                        <div className="w-[1px] h-10 bg-white/10 mx-1" />
-                                        <button 
-                                            onClick={handleClearSession}
-                                            className="p-3 bg-black/60 border border-white/10 rounded-full backdrop-blur-xl active:scale-90 transition-all hover:bg-red-600/20 hover:border-red-500/50 text-gray-400 hover:text-red-500 shadow-xl"
-                                            title="Clear Image"
-                                            aria-label="Clear current image"
-                                        >
-                                            <XIcon className="w-5 h-5"/>
-                                        </button>
-                                    </div>
-                                    
-                                    <div className="flex-1 relative">
-                                        {isComparing && originalImageUrl ? (
-                                            <CompareSlider originalImage={originalImageUrl} modifiedImage={currentMediaUrl} />
-                                        ) : (
-                                            <ZoomPanViewer src={currentMediaUrl} mimeType={currentImageFile?.type}>
-                                                {activeTab === 'inpaint' && (
-                                                    <canvas 
-                                                        ref={maskCanvasRef} 
-                                                        className="absolute inset-0 w-full h-full cursor-crosshair opacity-50 mix-blend-screen touch-none" 
-                                                        onMouseDown={(e) => e.stopPropagation()}
-                                                        onTouchStart={(e) => e.stopPropagation()}
-                                                    />
-                                                )}
-                                            </ZoomPanViewer>
-                                        )}
-                                    </div>
-
-                                    {viewerInstruction && !isComparing && (
-                                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 px-6 py-2.5 bg-black/80 backdrop-blur-xl border border-white/10 rounded-full text-[10px] font-mono font-bold text-gray-300 whitespace-nowrap animate-fade-in shadow-2xl tracking-[0.2em] uppercase">
-                                            {viewerInstruction}
-                                        </div>
-                                    )}
-                                </>
-                            ) : (
-                                <ImageUploadPlaceholder onImageUpload={handleImageUpload} />
+                    <Header onGoHome={handleClearSession} isPlatinumTier={true} />
+                    
+                    <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+                        {/* VIEWER AREA */}
+                        <div className="flex-1 relative bg-surface-deep overflow-hidden flex flex-col">
+                            {isLoading && (
+                                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                                    <Spinner />
+                                    {viewerInstruction && <div className="absolute bottom-10 text-white font-mono text-xs animate-pulse">{viewerInstruction}</div>}
+                                </div>
                             )}
+                            
+                            {/* Error Toast */}
+                            {error && (
+                                <div className="absolute top-4 left-4 right-4 z-40 bg-red-900/80 border border-red-500 text-white p-3 rounded shadow-lg flex justify-between items-center animate-fade-in backdrop-blur-md">
+                                    <span className="text-xs font-mono">{error}</span>
+                                    <button onClick={() => setError(null)}><XIcon className="w-4 h-4" /></button>
+                                </div>
+                            )}
+
+                            {/* Main View */}
+                            <div className="flex-1 relative overflow-hidden">
+                                {isComparing && originalImageUrl && currentMediaUrl ? (
+                                    <CompareSlider originalImage={originalImageUrl} modifiedImage={currentMediaUrl} />
+                                ) : (
+                                    currentMediaUrl ? (
+                                        <ZoomPanViewer src={currentMediaUrl} className={activeTab === 'inpaint' ? 'cursor-crosshair' : ''}>
+                                            {/* Inpaint Mask Overlay */}
+                                        </ZoomPanViewer>
+                                    ) : (
+                                        <ImageUploadPlaceholder onImageUpload={handleImageUpload} />
+                                    )
+                                )}
+                            </div>
+
+                            {/* Viewer Controls Toolbar */}
+                            <div className="bg-surface-panel border-t border-surface-border p-2 flex justify-between items-center shrink-0 z-20">
+                                <div className="flex gap-2">
+                                    {/* Clear/Trash Button */}
+                                    <button
+                                        onClick={() => { if(window.confirm("Clear session and current image?")) handleClearSession(); }}
+                                        className="p-2 text-gray-400 hover:text-red-500 bg-surface-elevated rounded-sm border border-surface-border hover:border-red-500/50 transition-all"
+                                        title="Clear All"
+                                    >
+                                        <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                    
+                                    {/* Explicit Upload Button */}
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="p-2 text-gray-400 hover:text-blue-500 bg-surface-elevated rounded-sm border border-surface-border hover:border-blue-500/50 transition-all"
+                                        title="New Upload"
+                                    >
+                                        <PlusIcon className="w-4 h-4" />
+                                        <input type="file" ref={fileInputRef} onChange={(e) => {
+                                            const file = e.target.files?.[0];
+                                            if (file) handleImageUpload(file);
+                                            e.target.value = '';
+                                        }} className="hidden" accept="image/*" />
+                                    </button>
+
+                                    <button 
+                                        onClick={() => setShowHistoryGrid(true)} 
+                                        className="p-2 text-gray-400 hover:text-white bg-surface-elevated rounded-sm border border-surface-border hover:border-surface-border-light transition-all"
+                                        title="History"
+                                    >
+                                        <HistoryIcon className="w-4 h-4" />
+                                    </button>
+
+                                    <div className="w-px h-8 bg-surface-border mx-1"></div>
+                                    
+                                    <button 
+                                        onClick={() => setHistoryIndex(Math.max(0, historyIndex - 1))} 
+                                        disabled={historyIndex <= 0}
+                                        className="p-2 text-gray-400 hover:text-white disabled:opacity-30 transition-colors"
+                                        title="Undo"
+                                    >
+                                        <UndoIcon className="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                        onClick={() => setHistoryIndex(Math.min(history.length - 1, historyIndex + 1))} 
+                                        disabled={historyIndex >= history.length - 1}
+                                        className="p-2 text-gray-400 hover:text-white disabled:opacity-30 transition-colors"
+                                        title="Redo"
+                                    >
+                                        <RedoIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                <div className="flex gap-2">
+                                     {originalImageUrl && currentMediaUrl && (
+                                         <button 
+                                            onClick={() => setIsComparing(!isComparing)} 
+                                            className={`p-2 rounded-sm border transition-all ${isComparing ? 'bg-red-900/30 text-red-500 border-red-500' : 'bg-surface-elevated text-gray-400 border-surface-border hover:text-white'}`}
+                                            title="Compare Original"
+                                         >
+                                             <CompareIcon className="w-4 h-4" />
+                                         </button>
+                                     )}
+                                     <button 
+                                        onClick={handleDownload} 
+                                        disabled={!currentMediaUrl}
+                                        className="p-2 bg-surface-elevated text-gray-400 hover:text-green-400 border border-surface-border hover:border-green-500/50 rounded-sm transition-all"
+                                        title="Save/Share"
+                                     >
+                                        <DownloadIcon className="w-4 h-4" />
+                                     </button>
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Control Panel Section */}
-                        {activeTab && (
-                            <div className="h-[42%] md:h-[35%] border-t border-white/10 bg-[#060606] overflow-hidden flex flex-col shadow-[0_-20px_50px_rgba(0,0,0,0.5)] relative">
-                                {toolPanels.find(p => p.id === activeTab)?.component}
+                        {/* SIDEBAR */}
+                        <div className="w-full md:w-[400px] bg-surface-panel border-l border-surface-border flex flex-col z-20 shrink-0 h-[45vh] md:h-auto shadow-2xl">
+                            {/* Tab Bar with Labels for discovery */}
+                            <div className="flex overflow-x-auto no-scrollbar border-b border-surface-border bg-black/20">
+                                {[
+                                    { id: 'flux', icon: BoltIcon, color: 'text-red-500', label: 'FLUX' },
+                                    { id: 'style_extractor', icon: StyleExtractorIcon, color: 'text-purple-500', label: 'DNA' },
+                                    { id: 'filters', icon: PaletteIcon, color: 'text-cyan-500', label: 'FX' },
+                                    { id: 'vector', icon: VectorIcon, color: 'text-green-500', label: 'VECTOR' },
+                                    { id: 'typography', icon: TypeIcon, color: 'text-pink-500', label: 'TYPE' },
+                                    { id: 'inpaint', icon: EraserIcon, color: 'text-blue-500', label: 'ERASE' },
+                                    { id: 'adjust', icon: SunIcon, color: 'text-orange-500', label: 'LIGHT' },
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => handleTabSwitch(tab.id as ActiveTab)}
+                                        className={`flex-1 min-w-[3.8rem] py-2 flex flex-col justify-center items-center border-b-2 transition-all ${activeTab === tab.id ? `border-${tab.color.split('-')[1]}-500 bg-white/5` : 'border-transparent hover:bg-white/5 text-gray-600'}`}
+                                    >
+                                        <tab.icon className={`w-4 h-4 mb-1 ${activeTab === tab.id ? tab.color : 'text-gray-500'}`} />
+                                        <span className={`text-[8px] font-black tracking-tighter ${activeTab === tab.id ? 'text-white' : 'text-gray-600'}`}>{tab.label}</span>
+                                    </button>
+                                ))}
                             </div>
-                        )}
-
-                        {/* Bottom Navigation */}
-                        <nav className="flex items-center gap-1.5 p-3 bg-black border-t border-white/5 overflow-x-auto no-scrollbar scroll-smooth">
-                            <button
-                                onClick={handleDownload}
-                                disabled={!currentMediaUrl}
-                                className="p-4 bg-white/5 border border-white/10 rounded-xl cursor-pointer hover:bg-white/10 active:scale-95 transition-all flex-shrink-0 group shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
-                                title="Download Result"
-                            >
-                                <DownloadIcon className="w-6 h-6 text-gray-400 group-hover:text-white transition-colors" />
-                            </button>
                             
-                            <div className="h-10 w-[2px] bg-white/5 mx-2 flex-shrink-0" />
-                            
-                            {toolPanels.map(tool => (
-                                <button
-                                    key={tool.id}
-                                    onClick={() => handleTabSwitch(tool.id as ActiveTab)}
-                                    className={`flex flex-col items-center justify-center p-3 min-w-[84px] rounded-xl transition-all active:scale-95 relative group ${activeTab === tool.id ? 'bg-red-600/10 text-red-500' : 'text-gray-500 hover:bg-white/5'}`}
-                                >
-                                    <tool.icon className={`w-6 h-6 mb-1.5 transition-all ${activeTab === tool.id ? 'text-red-500 scale-110 drop-shadow-[0_0_8px_rgba(248,19,13,0.5)]' : 'text-gray-500 group-hover:text-gray-300'}`} />
-                                    <span className="text-[9px] font-black uppercase tracking-widest">{tool.title}</span>
-                                    {activeTab === tool.id && (
-                                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 h-[2px] bg-red-600 rounded-full shadow-[0_0_10px_#F8130D]" />
-                                    )}
-                                </button>
-                            ))}
-                        </nav>
-                    </main>
-                    
-                    {error && (
-                        <div className="fixed bottom-28 left-4 right-4 bg-red-950/90 backdrop-blur-2xl border-2 border-red-500/50 p-5 rounded-2xl text-red-100 text-xs font-mono shadow-[0_0_50px_rgba(248,19,13,0.3)] animate-fade-in z-[100] flex justify-between items-start">
-                            <div className="flex-1 pr-4 leading-relaxed">
-                                <span className="font-black text-red-400 block mb-1 uppercase tracking-widest">System Warning</span>
-                                {error}
+                            {/* Active Panel Content */}
+                            <div className="flex-1 overflow-hidden relative">
+                                {activeTab === 'flux' && (
+                                    <FluxPanel 
+                                        onRequest={handleGenerationRequest} 
+                                        isLoading={isLoading} 
+                                        hasImage={!!currentMediaUrl}
+                                        currentImageFile={currentImageFile}
+                                        setViewerInstruction={setViewerInstruction}
+                                        fluxPrompt={fluxPrompt}
+                                        setFluxPrompt={setFluxPrompt}
+                                        setPreviewImageUrl={setPreviewImageUrl}
+                                        isFastAiEnabled={isFastAiEnabled}
+                                    />
+                                )}
+                                {activeTab === 'style_extractor' && (
+                                    <StyleExtractorPanel 
+                                        isLoading={isLoading}
+                                        hasImage={!!currentMediaUrl}
+                                        currentImageFile={currentImageFile}
+                                        onRouteStyle={handleRouteStyle}
+                                        isFastAiEnabled={isFastAiEnabled}
+                                    />
+                                )}
+                                {activeTab === 'filters' && (
+                                    <FilterPanel 
+                                        onRequest={handleGenerationRequest} 
+                                        isLoading={isLoading}
+                                        setViewerInstruction={setViewerInstruction}
+                                        isFastAiEnabled={isFastAiEnabled}
+                                        hasImage={!!currentMediaUrl}
+                                        currentImageFile={currentImageFile}
+                                        initialPrompt={pendingPrompt || undefined}
+                                    />
+                                )}
+                                {activeTab === 'adjust' && (
+                                    <AdjustmentPanel 
+                                        onRequest={handleGenerationRequest} 
+                                        isLoading={isLoading}
+                                        setViewerInstruction={setViewerInstruction}
+                                        isFastAiEnabled={isFastAiEnabled}
+                                    />
+                                )}
+                                {activeTab === 'inpaint' && (
+                                    <InpaintPanel 
+                                        onApplyInpaint={(prompt) => handleGenerationRequest({ type: 'inpaint', prompt, maskBase64: '', useOriginal: false })}
+                                        onClearMask={() => {}}
+                                        isLoading={isLoading}
+                                        brushSize={brushSize}
+                                        setBrushSize={setBrushSize}
+                                        hasImage={!!currentMediaUrl}
+                                    />
+                                )}
+                                {activeTab === 'vector' && (
+                                    <VectorArtPanel 
+                                        onRequest={handleGenerationRequest} 
+                                        isLoading={isLoading}
+                                        hasImage={!!currentMediaUrl}
+                                        currentImageFile={currentImageFile}
+                                        setViewerInstruction={setViewerInstruction}
+                                        initialPrompt={pendingPrompt || undefined}
+                                    />
+                                )}
+                                {activeTab === 'typography' && (
+                                    <TypographicPanel 
+                                        onRequest={handleGenerationRequest} 
+                                        isLoading={isLoading}
+                                        hasImage={!!currentMediaUrl}
+                                        setViewerInstruction={setViewerInstruction}
+                                        initialPrompt={pendingPrompt || undefined}
+                                    />
+                                )}
                             </div>
-                            <button onClick={() => setError(null)} className="p-1 bg-red-500/20 rounded hover:bg-red-500/40 transition-colors">
-                                <XIcon className="w-5 h-5"/>
-                            </button>
                         </div>
-                    )}
-                    
-                    <SystemConfigWidget 
-                        onSoftFix={() => window.location.reload()} 
-                        onHardFix={async () => { await clearState(); window.location.reload(); }} 
-                    />
+                    </div>
                 </>
             )}
         </div>

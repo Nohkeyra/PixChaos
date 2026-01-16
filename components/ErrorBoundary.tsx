@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -41,14 +42,14 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             <div className="absolute inset-0 cyber-grid opacity-20 animate-[grid-move_2s_linear_infinite]"></div>
             <div className="absolute inset-0 bg-gradient-to-br from-black via-red-900/50 to-black opacity-70"></div>
             
-            <div className="relative z-10 bg-[#0A0A0A]/80 backdrop-blur-md border-2 border-red-500/50 p-8 max-w-lg w-full shadow-[0_0_50px_rgba(219,36,227,0.15)]">
-                <h1 className="text-4xl font-black text-red-500 mb-4 italic tracking-tighter" style={{ fontFamily: 'var(--font-display)' }}>
+            <div className="relative z-10 bg-surface-card/80 backdrop-blur-md border-2 border-red-500/50 p-8 max-w-lg w-full shadow-[0_0_50px_rgba(219,36,227,0.15)]">
+                <h1 className="text-4xl font-black text-red-500 mb-4 italic tracking-tighter font-display">
                     SYSTEM ANOMALY DETECTED
                 </h1>
                 <p className="text-gray-400 mb-6 font-bold uppercase tracking-wide text-xs">
                     The visual engine encountered a critical error. Reboot is required.
                 </p>
-                <div className="bg-[#111] p-4 border border-[#333] mb-6 text-left w-full overflow-auto max-h-40">
+                <div className="bg-surface-elevated p-4 border border-surface-border-light mb-6 text-left w-full overflow-auto max-h-40">
                     <p className="text-red-400 text-[10px] font-mono mb-1">ERR_STACK_TRACE:</p>
                     <code className="text-gray-300 text-xs font-mono break-all">
                         {this.state.error?.message || 'Unknown Critical Error'}

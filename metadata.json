@@ -1,8 +1,7 @@
 {
   "name": "Pixshop Core",
-  "description": "Gemini brings professional, prompt-based photo editing to your fingertips.",
+  "description": "Gemini brings professional, prompt-based image editing to your fingertips.",
   "requestFramePermissions": [
     "camera"
-  ],
-  "prompt": ""
+  ]
 }
