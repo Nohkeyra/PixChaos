@@ -113,3 +113,4 @@ export const DebugConsole: React.FC<DebugConsoleProps> = ({ onClose }) => {
     </div>
   );
 };
+          
