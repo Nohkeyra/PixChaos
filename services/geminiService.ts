@@ -7,7 +7,8 @@ import { GoogleGenAI, GenerateContentResponse, Type } from "@google/genai";
 
 // Factory to always get the freshest instance
 const getAiClient = () => {
-    const apiKey = process.env.local;
+    const apiKey = process.env.GEMINI_API_KEY;
+;
     if (!apiKey) {
         throw new Error("CRITICAL: Missing API_KEY. Check system configuration.");
     }
